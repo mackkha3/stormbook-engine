@@ -1,0 +1,20 @@
+{
+  "name": "stormbook-engine",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Speed-to-lead conversion engine for storm-restoration roofing contractors.",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  },
+  "packageManager": "npm@11.12.1",
+  "scripts": {
+    "preinstall": "node -e \"const {execSync}=require('child_process');try{const g=execSync('npm ls -g --depth=0 --json',{stdio:['ignore','pipe','ignore']}).toString();const d=JSON.parse(g).dependencies||{};const bad=['wrangler','typescript'].filter(p=>d[p]);if(bad.length){console.error('Global install detected: '+bad.join(', ')+'. This project requires zero global installs. Uninstall with: npm uninstall -g '+bad.join(' '));process.exit(1)}}catch(e){}\"",
+    "dev": "npm run dev --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  }
+}
