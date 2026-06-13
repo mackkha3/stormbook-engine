@@ -1,0 +1,7 @@
+{
+  "mock": true,
+  "apiBaseUrl": "https://api.stormbook.ai",
+  "defaultColor": "#B91C1C",
+  "defaultCompany": "Storm Restoration",
+  "supportEmail": "hello@stormbook.ai"
+}
