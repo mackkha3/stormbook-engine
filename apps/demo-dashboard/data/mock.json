@@ -1,0 +1,47 @@
+{
+  "client": "Henderson Roofing",
+  "generated_at": "2026-06-11T08:00:00Z",
+  "today_leads": [
+    { "id": "ld_001", "name": "M. Alvarez",   "source": "meta",     "received_at": "2026-06-11T07:14:00Z", "status": "Booked" },
+    { "id": "ld_002", "name": "J. Pierce",    "source": "angi",     "received_at": "2026-06-11T07:42:00Z", "status": "Booked" },
+    { "id": "ld_003", "name": "R. Cantu",     "source": "meta",     "received_at": "2026-06-11T08:03:00Z", "status": "Qualifying" },
+    { "id": "ld_004", "name": "S. Whitman",   "source": "web",      "received_at": "2026-06-11T08:21:00Z", "status": "DQ" },
+    { "id": "ld_005", "name": "D. Trevino",   "source": "meta",     "received_at": "2026-06-11T08:38:00Z", "status": "Booked" },
+    { "id": "ld_006", "name": "A. Sutton",    "source": "referral", "received_at": "2026-06-11T08:55:00Z", "status": "Qualifying" },
+    { "id": "ld_007", "name": "K. Hinojosa",  "source": "meta",     "received_at": "2026-06-11T09:11:00Z", "status": "Awaiting" },
+    { "id": "ld_008", "name": "L. Mackey",    "source": "meta",     "received_at": "2026-06-11T09:27:00Z", "status": "Booked" },
+    { "id": "ld_009", "name": "T. Vasquez",   "source": "angi",     "received_at": "2026-06-11T09:44:00Z", "status": "Qualifying" },
+    { "id": "ld_010", "name": "B. Hadley",    "source": "web",      "received_at": "2026-06-11T09:58:00Z", "status": "DQ" },
+    { "id": "ld_011", "name": "C. Salazar",   "source": "meta",     "received_at": "2026-06-11T10:17:00Z", "status": "Awaiting" },
+    { "id": "ld_012", "name": "R. Galloway",  "source": "meta",     "received_at": "2026-06-11T10:33:00Z", "status": "Awaiting" }
+  ],
+  "metrics": {
+    "avg_first_response_seconds": 38,
+    "avg_time_to_book_seconds": 227,
+    "booked_to_held_rate": 0.81,
+    "inspections_booked_7d": 23
+  },
+  "funnel_30d": {
+    "leads": 142,
+    "qualified": 67,
+    "booked": 38,
+    "held": 31,
+    "won": 11
+  },
+  "inspections_this_week": [
+    { "day": "Mon", "time": "09:00", "name": "Hollister",  "damage": "Wind" },
+    { "day": "Tue", "time": "08:30", "name": "Ramirez",    "damage": "Hail" },
+    { "day": "Tue", "time": "10:00", "name": "Pickering",  "damage": "Hail" },
+    { "day": "Tue", "time": "13:30", "name": "Trevino",    "damage": "Wind" },
+    { "day": "Tue", "time": "15:30", "name": "Caldwell",   "damage": "Hail" },
+    { "day": "Wed", "time": "09:15", "name": "Castillo",   "damage": "Hail" },
+    { "day": "Wed", "time": "11:00", "name": "Whitfield",  "damage": "Roof Leak" },
+    { "day": "Wed", "time": "14:00", "name": "Garza",      "damage": "Hail" },
+    { "day": "Wed", "time": "16:00", "name": "Reece",      "damage": "Wind" },
+    { "day": "Thu", "time": "08:00", "name": "Tanaka",     "damage": "Hail" },
+    { "day": "Thu", "time": "10:30", "name": "Driscoll",   "damage": "Wind" },
+    { "day": "Thu", "time": "14:30", "name": "Lozano",     "damage": "Hail" },
+    { "day": "Fri", "time": "09:30", "name": "Sutton",     "damage": "Hail" },
+    { "day": "Sat", "time": "10:00", "name": "Mackey",     "damage": "Wind" }
+  ]
+}

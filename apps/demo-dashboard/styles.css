@@ -1,0 +1,387 @@
+/* Stormbook demo dashboard — read-only, screen-share-friendly. */
+
+:root {
+  --bg: #0A0A0B;
+  --surface: #141416;
+  --surface-2: #1B1B1E;
+  --border: #2A2A2E;
+  --text: #F5F5F7;
+  --muted: #8A8A91;
+  --accent: #FFD500;
+
+  --status-awaiting: #6B7280;
+  --status-qualifying: #3B82F6;
+  --status-booked: #10B981;
+  --status-dq: #EF4444;
+
+  --ok: #10B981;
+  --warn: #F59E0B;
+
+  --gutter: 24px;
+  --pad: 16px;
+  --radius: 12px;
+
+  --font-ui: "Inter Tight", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.mono { font-family: var(--font-mono); letter-spacing: -0.01em; }
+
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+
+/* ---------- Header ---------- */
+.header {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px var(--gutter);
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.wordmark {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: 0.08em;
+  color: var(--text);
+}
+
+.client-selector {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 10px 6px 12px;
+  cursor: help;
+}
+
+.client-selector__label {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.client-selector select {
+  background: transparent;
+  color: var(--text);
+  border: 0;
+  font: inherit;
+  padding: 4px 6px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.client-selector select:focus { outline: 2px solid var(--accent); border-radius: 4px; }
+
+/* DEMO ribbon — high-contrast, impossible to miss */
+.demo-ribbon {
+  background: var(--accent);
+  color: #111;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 13px;
+  text-align: center;
+  padding: 10px var(--gutter);
+  width: 100%;
+}
+
+/* ---------- Dashboard layout ---------- */
+.dashboard {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--gutter);
+  display: grid;
+  gap: var(--gutter);
+}
+
+.section-h {
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0 0 12px 4px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--pad);
+}
+
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.card-head h2 { font-size: 16px; }
+
+.card-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---------- Today's leads table ---------- */
+.table-wrap { overflow-x: auto; }
+
+table.leads {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+table.leads th,
+table.leads td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+table.leads thead th {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+table.leads tbody tr:last-child td { border-bottom: 0; }
+table.leads tbody tr:hover { background: var(--surface-2); }
+
+table.leads .col-time { font-family: var(--font-mono); color: var(--text); }
+table.leads .col-source { color: var(--muted); text-transform: lowercase; }
+
+.badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #fff;
+}
+
+.badge--awaiting    { background: var(--status-awaiting); }
+.badge--qualifying  { background: var(--status-qualifying); }
+.badge--booked      { background: var(--status-booked); }
+.badge--dq          { background: var(--status-dq); }
+
+.leads__placeholder td { color: var(--muted); text-align: center; padding: 24px 12px; }
+
+/* ---------- KPI cards ---------- */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--gutter);
+}
+
+.kpi {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 140px;
+}
+
+.kpi__label {
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.kpi__value {
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  margin: 10px 0 12px;
+  line-height: 1.1;
+}
+
+.kpi__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.kpi__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.kpi__status--ok { color: var(--ok); }
+.kpi__status--warn { color: var(--warn); }
+
+.kpi__status::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ---------- Funnel chart ---------- */
+.funnel {
+  position: relative;
+  /* Chart.js sizes itself off canvas attrs + container width */
+}
+
+/* ---------- Weekly calendar ----------
+   Layout: row of columns. First column = time labels.
+   Each day column has a header + a relative-positioned body where
+   inspection blocks are absolutely placed by minutes-since-8am. */
+.calendar {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 12px;
+  background: var(--surface);
+  --slot-h: 38px;            /* height per 1-hour slot */
+  --cal-start-hour: 8;       /* first hour displayed (8am) */
+  --cal-end-hour: 18;        /* last hour displayed (6pm) */
+}
+
+.cal-col {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border-right: 1px solid var(--border);
+}
+.cal-col:last-child { border-right: 0; }
+
+.cal-col--times {
+  flex: 0 0 56px;
+  background: var(--surface-2);
+}
+
+.cal-col--day { flex: 1 1 0; }
+
+.cal-head {
+  background: var(--surface-2);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cal-times {
+  display: flex;
+  flex-direction: column;
+}
+
+.cal-time-slot {
+  height: var(--slot-h);
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 2px 6px 0 0;
+  font-family: var(--font-mono);
+  color: var(--muted);
+  font-size: 11px;
+  border-bottom: 1px solid var(--border);
+}
+.cal-time-slot:last-child { border-bottom: 0; }
+
+.cal-col__body {
+  position: relative;
+  /* 10 hourly slots (8→18 = 10 intervals) */
+  height: calc(var(--slot-h) * (var(--cal-end-hour) - var(--cal-start-hour)));
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent calc(var(--slot-h) - 1px),
+    var(--border) calc(var(--slot-h) - 1px),
+    var(--border) var(--slot-h)
+  );
+}
+
+.cal-block {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  background: rgba(255, 213, 0, 0.14);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--text);
+  overflow: hidden;
+}
+
+.cal-block__time { font-family: var(--font-mono); color: var(--muted); display: block; font-size: 10px; }
+.cal-block__name { font-weight: 600; display: block; }
+.cal-block__tag {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 1px 6px;
+  background: rgba(245, 245, 247, 0.08);
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+/* ---------- Footer ---------- */
+.footer {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 16px var(--gutter) 28px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 980px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .kpi__value { font-size: 32px; }
+}
+
+@media (max-width: 640px) {
+  .header-row { padding: 14px 16px; }
+  .dashboard { padding: 16px; gap: 16px; }
+  .kpi-grid { grid-template-columns: 1fr; }
+  .calendar { font-size: 11px; }
+}

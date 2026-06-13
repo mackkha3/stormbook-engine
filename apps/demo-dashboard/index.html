@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stormbook — Demo Dashboard</title>
+  <meta name="robots" content="noindex,nofollow" />
+
+  <link rel="preconnect" href="https://fonts.bunny.net" crossorigin />
+  <link rel="stylesheet" href="https://fonts.bunny.net/css?family=inter-tight:400,500,600,700|jetbrains-mono:500,700&display=swap" />
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="header-row">
+      <div class="wordmark">STORMBOOK</div>
+
+      <label class="client-selector" title="Cosmetic only in v1 — switching does not swap datasets">
+        <span class="client-selector__label">Client</span>
+        <select id="client-select" aria-label="Client (demo, cosmetic only)">
+          <option value="henderson">Henderson Roofing</option>
+          <option value="beacon">Beacon Storm Pros</option>
+          <option value="lone-star">Lone Star Restoration</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="demo-ribbon" role="note" aria-label="Demo data notice">
+      DEMO DATA — Not a live client pipeline
+    </div>
+  </header>
+
+  <main class="dashboard">
+    <!-- §1. Today's leads -->
+    <section class="card" aria-labelledby="leads-h">
+      <header class="card-head">
+        <h2 id="leads-h">Today&rsquo;s Leads</h2>
+        <span class="card-meta" id="leads-meta"></span>
+      </header>
+      <div class="table-wrap">
+        <table class="leads" aria-describedby="leads-h">
+          <thead>
+            <tr>
+              <th scope="col">Name</th>
+              <th scope="col">Source</th>
+              <th scope="col">Time Received</th>
+              <th scope="col">Status</th>
+            </tr>
+          </thead>
+          <tbody id="leads-body">
+            <tr class="leads__placeholder"><td colspan="4">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- §2. Response time metrics -->
+    <section aria-labelledby="kpi-h">
+      <h2 id="kpi-h" class="section-h">Response Time Metrics</h2>
+      <div class="kpi-grid">
+        <article class="card kpi" id="kpi-first-response">
+          <div class="kpi__label">Avg first response time</div>
+          <div class="kpi__value mono"><span data-field="value">&mdash;</span></div>
+          <div class="kpi__foot">
+            <span class="kpi__target">Target &lt; 60s</span>
+            <span class="kpi__status" data-field="status"></span>
+          </div>
+        </article>
+
+        <article class="card kpi" id="kpi-time-to-book">
+          <div class="kpi__label">Avg time-to-book</div>
+          <div class="kpi__value mono"><span data-field="value">&mdash;</span></div>
+          <div class="kpi__foot">
+            <span class="kpi__target">Target &lt; 4 min</span>
+            <span class="kpi__status" data-field="status"></span>
+          </div>
+        </article>
+
+        <article class="card kpi" id="kpi-held-rate">
+          <div class="kpi__label">Booked-to-held rate</div>
+          <div class="kpi__value mono"><span data-field="value">&mdash;</span></div>
+          <div class="kpi__foot">
+            <span class="kpi__target">Target &gt; 75%</span>
+            <span class="kpi__status" data-field="status"></span>
+          </div>
+        </article>
+
+        <article class="card kpi kpi--neutral" id="kpi-inspections-7d">
+          <div class="kpi__label">7-day inspections booked</div>
+          <div class="kpi__value mono"><span data-field="value">&mdash;</span></div>
+          <div class="kpi__foot">
+            <span class="kpi__target">Rolling 7 days</span>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- §3. Conversion funnel -->
+    <section class="card" aria-labelledby="funnel-h">
+      <header class="card-head">
+        <h2 id="funnel-h">Conversion Funnel</h2>
+        <span class="card-meta">Last 30 days</span>
+      </header>
+      <div class="funnel">
+        <canvas id="funnel-chart" height="260" aria-label="Conversion funnel chart" role="img"></canvas>
+      </div>
+    </section>
+
+    <!-- §4. Inspections this week -->
+    <section class="card" aria-labelledby="cal-h">
+      <header class="card-head">
+        <h2 id="cal-h">Inspections This Week</h2>
+        <span class="card-meta" id="cal-meta"></span>
+      </header>
+      <div class="calendar" id="calendar" role="grid" aria-label="Weekly inspections calendar"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span class="mono">stormbook</span> &middot; demo dashboard &middot; build #2
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" defer></script>
+  <script src="dashboard.js" defer></script>
+</body>
+</html>
