@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "python",
+  "packages": {
+    "python": "3.13"
+  },
+  "steps": {
+    "install": {
+      "commands": [
+        "curl -LsSf https://astral.sh/uv/install.sh | sh",
+        "$HOME/.local/bin/uv sync --frozen --no-dev"
+      ]
+    }
+  },
+  "deploy": {
+    "startCommand": "$HOME/.local/bin/uv run uvicorn intake_api.main:app --host 0.0.0.0 --port $PORT"
+  }
+}

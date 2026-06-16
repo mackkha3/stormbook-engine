@@ -1,0 +1,14 @@
+{
+  "henderson-roofing": {
+    "ghl_location_id": "loc_abc123",
+    "custom_field_ids": {
+      "damage_type":       "cf_damage_type_REPLACE",
+      "stormbook_lead_id": "cf_stormbook_lead_id_REPLACE",
+      "homeowner_status":  "cf_homeowner_status_REPLACE",
+      "insurance_status":  "cf_insurance_status_REPLACE",
+      "inspection_date":   "cf_inspection_date_REPLACE",
+      "property_address":  "cf_property_address_REPLACE"
+    },
+    "service_area_zips": ["75701", "75702"]
+  }
+}

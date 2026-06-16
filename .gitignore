@@ -9,6 +9,16 @@ node_modules/
 # Per-deploy app config (intake-form). config.example.json is committed.
 apps/intake-form/config.json
 
+# Per-deploy intake-api client config. clients.example.json is committed.
+apps/intake-api/data/clients.json
+
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
 # Build output
 dist/
 build/
