@@ -19,6 +19,7 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from intake_api.handlers import angi, health, intake, meta
@@ -48,6 +49,22 @@ app = FastAPI(
     title="Stormbook Intake API",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+
+_default_cors_origins = "http://localhost:4321,http://127.0.0.1:4321"
+cors_origins = [
+    o.strip()
+    for o in os.environ.get("CORS_ORIGINS", _default_cors_origins).split(",")
+    if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Request-ID"],
+    max_age=3600,
 )
 
 

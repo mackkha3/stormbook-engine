@@ -136,6 +136,12 @@ auto-detection. No Dockerfile.
    - `GOOGLE_MAPS_API_KEY=…`
    - `META_APP_SECRET=…`, `META_VERIFY_TOKEN=…`, `META_PAGE_ACCESS_TOKEN=…`
    - One `GHL_API_KEY_<CLIENT_ID>=…` per pilot.
+   - `CORS_ORIGINS=https://intake.stormbook.ai` — comma-separated list
+     of origins allowed to POST to the API. Dev defaults to
+     `http://localhost:4321` (the intake-form's dev port); production
+     must set this explicitly to the intake form's domain. If a client
+     embeds the form on their own site (e.g.
+     `henderson-roofing.com`), append that origin to the list.
 
 5. **Public domain:** Railway → Service → Settings → Networking →
    Generate Domain (gets you `*.up.railway.app`). Then add a CNAME from

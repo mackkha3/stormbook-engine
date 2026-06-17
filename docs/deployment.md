@@ -40,6 +40,7 @@ canonical template.
 | `META_APP_SECRET`            | yes      | Meta App Secret — verifies `X-Hub-Signature-256` on POSTs.       |
 | `META_PAGE_ACCESS_TOKEN`     | yes      | Page access token for fetching lead details from Graph API.      |
 | `GHL_API_KEY_<CLIENT_ID>`    | per-client | One per pilot. Naming: client_id uppercased, `-` → `_`.        |
+| `CORS_ORIGINS`               | yes (prod) | Comma-separated allowed origins for browser POSTs. Defaults to `http://localhost:4321` in dev; must be set explicitly in production (e.g. `https://intake.stormbook.ai`). |
 
 Per-client GHL location IDs + custom field IDs live in
 `apps/intake-api/data/clients.json` (gitignored). Use
