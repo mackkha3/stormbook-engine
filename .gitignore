@@ -9,6 +9,9 @@ node_modules/
 # Per-deploy app config (intake-form). config.example.json is committed.
 apps/intake-form/config.json
 
+# Per-deploy relay URL for the demo rig. config.example.json is committed.
+apps/demo-form/config.json
+
 # Per-deploy intake-api client config. clients.example.json is committed.
 apps/intake-api/data/clients.json
 
