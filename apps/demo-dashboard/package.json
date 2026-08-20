@@ -5,9 +5,6 @@
   "description": "Static read-only sales-demo dashboard. Mock data, Chart.js, no backend.",
   "scripts": {
     "dev": "npx --yes http-server@14 . -p 4322 -c-1 -o",
-    "start": "npx --yes http-server@14 . -p 4322 -c-1",
-    "build": "echo \"demo-dashboard is static; no build step\" && exit 0",
-    "lint": "echo \"no linter configured\" && exit 0",
-    "test": "echo \"no tests; static demo asset\" && exit 0"
+    "start": "npx --yes http-server@14 . -p 4322 -c-1"
   }
 }
