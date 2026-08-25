@@ -35,6 +35,10 @@
     slot_b_time: "2:00 PM",
   };
 
+  // Read once at boot from ?t=… — the bookmark on the operator's iPad carries
+  // it. Never rendered into the DOM: a screen share is the whole use case.
+  var ACCESS_TOKEN = readToken();
+
   var TEXT_FIELDS = [
     "contractor_first_name",
     "contractor_company",
@@ -44,9 +48,25 @@
   ];
 
   // ---------- Boot ----------
+  function readToken() {
+    try {
+      var t = new URLSearchParams(location.search).get("t");
+      return t ? t.trim() : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function showTokenWarning() {
+    if (ACCESS_TOKEN) return;
+    var warn = document.getElementById("token-warning");
+    if (warn) warn.hidden = false;
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     populateSelects();
     applyPresets();
+    showTokenWarning();
     loadConfig().then(start).catch(function (err) {
       console.error("[stormbook-demo] config load failed", err);
       start(DEFAULTS);
@@ -289,6 +309,8 @@
         var msg = "Relay error: " + (err && err.message ? err.message : "unknown");
         if (err && err.name === "AbortError") {
           msg = "The relay timed out. Check that it's awake, then fire again.";
+        } else if (err && err.name === "AccessDeniedError") {
+          msg = err.message;
         }
         // Form state is untouched — no retyping mid-call.
         setFormError(msg);
@@ -299,15 +321,26 @@
     var controller = new AbortController();
     var timer = setTimeout(function () { controller.abort(); }, SUBMIT_TIMEOUT_MS);
 
+    var headers = { "Content-Type": "application/json", "Accept": "application/json" };
+    if (ACCESS_TOKEN) headers["Authorization"] = "Bearer " + ACCESS_TOKEN;
+
     return fetch(relay + "/fire", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      headers: headers,
       body: JSON.stringify(payload),
       signal: controller.signal,
     }).then(function (res) {
       clearTimeout(timer);
       return res.json().catch(function () { return {}; }).then(function (body) {
         if (!res.ok) {
+          if (res.status === 401) {
+            // Deliberately says nothing about the token's value.
+            var denied = new Error(
+              "Access denied — token missing or invalid. Check the URL."
+            );
+            denied.name = "AccessDeniedError";
+            throw denied;
+          }
           throw new Error(body.detail || body.code || "HTTP " + res.status);
         }
         return body;

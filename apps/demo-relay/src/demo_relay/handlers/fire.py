@@ -5,12 +5,16 @@ inbound reply can be correlated, and arms the 10-minute follow-up. The
 response echoes the exact message body so the operator's screen shows what
 the phone in his hand just received.
 
-No auth: the endpoint lives behind a screen share for the length of three
-pilot sales. If the URL ever leaks, add DEMO_ACCESS_TOKEN + a Bearer check.
+Auth: a bearer token, so the operator can park this on a public URL and hit
+it from an iPad mid-conversation without anyone who finds the domain being
+able to burn the Twilio balance. Set DEMO_ACCESS_TOKEN to arm it; leave it
+unset locally and the check disappears.
 """
 
 from __future__ import annotations
 
+import hmac
+import os
 import uuid
 from datetime import UTC, datetime
 
@@ -28,9 +32,54 @@ router = APIRouter()
 log = get(__name__)
 
 
+def _client_ip(request: Request) -> str:
+    # Railway sits behind a proxy; the first XFF hop is the real caller.
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else ""
+
+
+def _check_token(request: Request, request_id: str) -> None:
+    """401 unless the request carries the expected bearer token.
+
+    An unset or empty DEMO_ACCESS_TOKEN disables the check entirely — that's
+    the local-dev path, and keeping it frictionless is the point.
+    """
+    expected = os.environ.get("DEMO_ACCESS_TOKEN", "").strip()
+    if not expected:
+        return
+
+    header = request.headers.get("Authorization", "")
+    scheme, _, presented = header.partition(" ")
+
+    if not header or scheme.lower() != "bearer" or not presented.strip():
+        _log_auth_failure(request, request_id, "missing")
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+
+    if not hmac.compare_digest(presented.strip(), expected):
+        _log_auth_failure(request, request_id, "invalid")
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def _log_auth_failure(request: Request, request_id: str, reason: str) -> None:
+    # `reason` is a fixed label, never the header or the token itself.
+    log.warning(
+        "fire_auth_failed",
+        extra={
+            "request_id": request_id,
+            "source_ip": _client_ip(request),
+            "reason": reason,
+        },
+    )
+
+
 @router.post("/fire", response_model=FireResponse)
 async def fire(payload: FireRequest, request: Request) -> FireResponse:
     request_id = getattr(request.state, "request_id", "")
+
+    _check_token(request, request_id)
+
     conversation_id = str(uuid.uuid4())
 
     try:

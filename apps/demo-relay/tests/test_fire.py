@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import httpx
 import pytest
@@ -106,6 +107,111 @@ async def test_fire_returns_502_when_twilio_rejects(client, httpx_mock):
 
     assert resp.status_code == 502
     assert "Twilio send failed" in resp.json()["detail"]
+
+
+# --- Bearer token auth ------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fire_without_token_env_needs_no_header(client, httpx_mock, monkeypatch):
+    monkeypatch.delenv("DEMO_ACCESS_TOKEN", raising=False)
+    httpx_mock.add_response(
+        url=TWILIO_MESSAGES_URL, method="POST", json={"sid": "SM_noauth"}, status_code=201
+    )
+
+    resp = await client.post("/fire", json=FIRE_PAYLOAD)
+
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_fire_with_empty_token_env_needs_no_header(client, httpx_mock, monkeypatch):
+    # An empty value is the same dev-mode switch as an unset one — Railway
+    # blanks a variable rather than deleting it when you clear the field.
+    monkeypatch.setenv("DEMO_ACCESS_TOKEN", "")
+    httpx_mock.add_response(
+        url=TWILIO_MESSAGES_URL, method="POST", json={"sid": "SM_emptyauth"}, status_code=201
+    )
+
+    resp = await client.post("/fire", json=FIRE_PAYLOAD)
+
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_fire_rejects_missing_authorization_header(client, monkeypatch):
+    monkeypatch.setenv("DEMO_ACCESS_TOKEN", "test123")
+
+    resp = await client.post("/fire", json=FIRE_PAYLOAD)
+
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Missing bearer token"
+
+
+@pytest.mark.asyncio
+async def test_fire_rejects_non_bearer_authorization_header(client, monkeypatch):
+    monkeypatch.setenv("DEMO_ACCESS_TOKEN", "test123")
+
+    resp = await client.post(
+        "/fire", json=FIRE_PAYLOAD, headers={"Authorization": "Basic test123"}
+    )
+
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Missing bearer token"
+
+
+@pytest.mark.asyncio
+async def test_fire_rejects_wrong_token(client, monkeypatch):
+    monkeypatch.setenv("DEMO_ACCESS_TOKEN", "test123")
+
+    resp = await client.post(
+        "/fire", json=FIRE_PAYLOAD, headers={"Authorization": "Bearer wrong-token"}
+    )
+
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "Invalid token"
+
+
+@pytest.mark.asyncio
+async def test_fire_accepts_correct_token(client, httpx_mock, monkeypatch):
+    monkeypatch.setenv("DEMO_ACCESS_TOKEN", "test123")
+    httpx_mock.add_response(
+        url=TWILIO_MESSAGES_URL, method="POST", json={"sid": "SM_authed"}, status_code=201
+    )
+
+    resp = await client.post(
+        "/fire", json=FIRE_PAYLOAD, headers={"Authorization": "Bearer test123"}
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["twilio_message_sid"] == "SM_authed"
+    assert body["message_body"].startswith("Hi Jane, this is Mike with Henderson Roofing.")
+
+
+@pytest.mark.asyncio
+async def test_auth_failure_is_logged_without_leaking_the_token(client, monkeypatch, caplog):
+    monkeypatch.setenv("DEMO_ACCESS_TOKEN", "sup3r-s3cret-token")
+
+    with caplog.at_level(logging.WARNING, logger="demo_relay.handlers.fire"):
+        resp = await client.post(
+            "/fire", json=FIRE_PAYLOAD, headers={"Authorization": "Bearer guessed-wrong"}
+        )
+
+    assert resp.status_code == 401
+
+    records = [r for r in caplog.records if r.getMessage() == "fire_auth_failed"]
+    assert len(records) == 1
+    record = records[0]
+    assert record.levelno == logging.WARNING
+    assert record.request_id
+    assert hasattr(record, "source_ip")
+
+    # Neither the configured token nor the presented header value may appear
+    # anywhere in the record — that's the whole reason we log a fixed reason.
+    blob = str(record.__dict__)
+    assert "sup3r-s3cret-token" not in blob
+    assert "guessed-wrong" not in blob
 
 
 # --- Message 2 scheduling ---------------------------------------------------

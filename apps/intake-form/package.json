@@ -5,9 +5,6 @@
   "description": "Mobile-first HTML/CSS/vanilla-JS intake form for storm damage inspection leads.",
   "scripts": {
     "dev": "npx --yes http-server@14 . -p 4321 -c-1 -o /?client_id=demo-roofing&company=Demo+Roofing&color=%23B91C1C&phone=903-555-0199&source=meta",
-    "start": "npx --yes http-server@14 . -p 4321 -c-1",
-    "build": "echo \"intake-form is static; no build step\" && exit 0",
-    "lint": "echo \"no linter configured\" && exit 0",
-    "test": "echo \"see TODO.md for tests to add\" && exit 0"
+    "start": "npx --yes http-server@14 . -p 4321 -c-1"
   }
 }

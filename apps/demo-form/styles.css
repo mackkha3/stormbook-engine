@@ -258,6 +258,18 @@ select[aria-invalid="true"] {
   text-align: center;
 }
 
+/* Subtle by design — it warns the operator, it doesn't alarm the prospect. */
+.token-warning {
+  margin: 0;
+  padding: 8px var(--space);
+  background: #FEF2F2;
+  color: #7F1D1D;
+  border-bottom: 1px solid #FCA5A5;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+}
+
 .section {
   margin: 0;
   padding: 16px;
