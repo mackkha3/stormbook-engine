@@ -90,8 +90,10 @@ class Harness:
         if state == "fresh":
             return
         await self.say("yes", U("affirm"))                       # → slots offered
-        if state == "booked":
+        if state in ("booked", "cancelled"):
             await self.say("1", U("pick_slot", slot_choice=1))
+            if state == "cancelled":
+                await self.say("please cancel my inspection", U("cancel"))
         elif state == "asked":                                   # → ask_preference sent
             await self.say("neither", U("none_work"))
             await self.say("no", U("none_work"))

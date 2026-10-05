@@ -174,9 +174,14 @@ async def test_reschedule_moves_the_existing_appointment(h: Harness):
 
 async def test_cancel_cancels_the_appointment_confirms_and_notifies(h: Harness):
     await h.reach("booked")
-    result = await h.say("cancel", U("cancel"))
+    result = await h.say("can we cancel monday", U("cancel"))
     (appointment,) = h.calendar.appointments.values()
     assert appointment.cancelled and result.template_key == "cancelled"
-    assert h.conv.status == "closed"
-    assert "engine-handoff" in h.gateway.tags_added()
-    assert "Reason: homeowner_cancelled" in h.gateway.notes()[0]
+    assert h.conv.status == "cancelled" and h.conv.appointment_id is None
+    assert result.booking == {"action": "cancelled", "appointment_id": appointment.id}
+    # Labeled as a cancellation, not a handoff, so the roofer's alert reads correctly.
+    assert h.gateway.tags_added() == ["engine-cancelled"]
+    assert "engine-handoff" not in h.gateway.tags_added()
+    (note,) = h.gateway.notes()
+    assert note.startswith("Booking engine: the homeowner cancelled their inspection by text.")
+    assert "homeowner: can we cancel monday" in note and "engine: Your inspection is cancelled" in note

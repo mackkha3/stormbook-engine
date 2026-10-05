@@ -43,14 +43,14 @@ Never install packages globally: `uv` owns the environment.
 ## Tests
 
 ```bash
-uv run pytest               # 188 tests, no network, no API key
-uv run pytest -m live       # 73 more: real model vs. every fixture message (needs ANTHROPIC_API_KEY, costs a few cents)
+uv run pytest               # 308 tests, no network, no API key
+uv run pytest -m live       # 86 more: real model vs. every fixture message (needs ANTHROPIC_API_KEY, costs a few cents)
 uv run ruff check .
 ```
 
 | File | Covers |
 |---|---|
-| `tests/fixtures/homeowner_messages.yaml` | 73 realistic homeowner texts across all 15 intents |
+| `tests/fixtures/homeowner_messages.yaml` | 86 realistic homeowner texts across all 15 intents |
 | `test_understanding.py` | JSON validation, retry-once-then-handoff, opt-out keywords, live model eval |
 | `test_conversation.py` | Every fixture → expected action; unclear/handoff/opt-out/cap rules |
 | `test_safety.py` | Output safety check: template-only, no dollar amounts, banned phrases, calendar-only times |
@@ -81,7 +81,9 @@ env var named by `ghl_token_env` is set.
    schema output) for the intent, with the last 6 messages and current state.
    A failed or invalid answer is retried once, then the turn is handed off.
 3. Code rules apply: an opt-out always wins, non-English hands off,
-   confidence under 0.7 becomes `unclear`.
+   confidence under 0.7 becomes `unclear`. A message that is exactly a carrier
+   keyword (STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, OPTOUT, REVOKE) is an
+   opt-out in every state, decided in code without asking the model.
 4. `conversation.py` picks the action: a template, slots from the calendar,
    a booking / move / cancel, or a handoff.
 5. `templates.py` renders the template and runs the output safety check. If
@@ -101,10 +103,22 @@ env var named by `ghl_token_env` is set.
 | `slots.py` | Slot filtering, spreading, formatting |
 | `calendar/` | Calendar interface, mock (Phase 1), GHL (Phase 2) |
 | `engine.py` | The turn pipeline that wires the above together |
+| `turn.py` | Value types for one turn (inbound message, decision, result) |
 | `debounce.py` | Collects a burst of texts into one turn |
 | `gateway.py` | CRM actions interface (SMS, tags, notes, stage) + in-memory recorder |
 | `logger.py` | Structured JSON logs (same as demo-relay) |
 | `simulate.py` | Terminal simulator |
+
+## CRM tags the engine sets
+
+| Tag | When |
+|---|---|
+| `booked` | Inspection booked (opportunity also moves to the `booked` stage) |
+| `engine-handoff` | Handed to a human; `engine-active` is removed and a note is added |
+| `engine-emergency` | Added alongside `engine-handoff` for emergencies |
+| `engine-cancelled` | Homeowner cancelled a booked inspection; a note is added. Removed again if they text back to rebook |
+| `engine-opted-out` | Any opt-out, keyword or model-detected. Nothing is sent |
+| `engine-optout-booked` | Opted out while an inspection is still booked. The appointment is kept and a note tells the roofer they can no longer text this person |
 
 ## Environment variables
 

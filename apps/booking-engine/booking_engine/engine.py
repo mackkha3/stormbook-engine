@@ -10,14 +10,13 @@ check, and "when anything goes wrong, hand off".
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from booking_engine import gateway as gw
 from booking_engine.calendar.base import Calendar
 from booking_engine.config_loader import ClientConfig, ConfigError
-from booking_engine.conversation import REQUIRED_TEMPLATES, Decision, Turn, decide, handoff
+from booking_engine.conversation import REQUIRED_TEMPLATES, decide
 from booking_engine.debounce import Debouncer
 from booking_engine.logger import get
 from booking_engine.models import BOOKED, HANDOFF, OPTED_OUT, STOPPED, Conversation
@@ -30,6 +29,7 @@ from booking_engine.templates import (
     UnsafeOutput,
     static_violation,
 )
+from booking_engine.turn import Contact, Decision, InboundMessage, Turn, TurnResult, handoff
 from booking_engine.understanding import (
     TurnContext,
     Understander,
@@ -43,34 +43,6 @@ log = get(__name__)
 MIN_CONFIDENCE = 0.7
 MAX_ENGINE_MESSAGES = 8      # without a booking; the next reply becomes a handoff
 NOTE_MESSAGES = 6
-
-
-@dataclass(frozen=True)
-class Contact:
-    contact_id: str
-    phone: str
-    name: str | None = None
-
-
-@dataclass(frozen=True)
-class InboundMessage:
-    message_id: str
-    body: str
-    timestamp: datetime | None = None
-
-
-@dataclass
-class TurnResult:
-    inbound_text: str
-    status: str
-    intent: str | None = None
-    understanding: dict | None = None
-    template_key: str | None = None
-    reply: str | None = None
-    booking: dict | None = None
-    handoff_reason: str | None = None
-    crm_calls: list[dict[str, Any]] = field(default_factory=list)
-    ignored: bool = False
 
 
 class Engine:
@@ -129,10 +101,11 @@ class Engine:
         conv = self.store.get_or_create(
             self.client.client_slug, contact.contact_id, contact.phone, contact.name
         )
-        text = "\n".join(m.body.strip() for m in messages if m.body.strip())
+        bodies = [m.body.strip() for m in messages if m.body.strip()]
+        text = "\n".join(bodies)
         result = TurnResult(inbound_text=text, status=conv.status)
         try:
-            await self._run(conv, text, result)
+            await self._run(conv, bodies, text, result)
         except Exception as exc:
             # Never leave a homeowner in limbo on a bug or an outage: a human takes over.
             log.exception("turn_failed", extra={"contact_id": contact.contact_id})
@@ -141,20 +114,22 @@ class Engine:
         self._record(conv, result, [m.message_id for m in messages])
         return result
 
-    async def _run(self, conv: Conversation, text: str, result: TurnResult) -> None:
+    async def _run(
+        self, conv: Conversation, bodies: list[str], text: str, result: TurnResult
+    ) -> None:
         tz = self.client.tz
         now = self._clock().astimezone(tz)
         history = self.store.recent_messages(conv.id, NOTE_MESSAGES)
 
-        if conv.status in STOPPED:
+        # An opt-out keyword is honoured in every state, even after a handoff or a close.
+        opt_out = keyword_opt_out(bodies)
+        if conv.status == OPTED_OUT or (conv.status in STOPPED and not opt_out):
             result.ignored = True
-            if keyword_opt_out(text):
-                conv.status = OPTED_OUT
             return
 
         decision: Decision | None = None
         u: Understanding | None = None
-        if keyword_opt_out(text):
+        if opt_out:
             u = Understanding(intent="opt_out", confidence=1.0, notes="opt-out keyword (code rule)")
         else:
             try:
@@ -185,7 +160,7 @@ class Engine:
                 )
 
         if (
-            decision.template_key and not decision.handoff and not decision.notify
+            decision.template_key and not decision.handoff and not decision.cancelled
             and conv.status not in (BOOKED, *STOPPED)
             and conv.engine_message_count >= MAX_ENGINE_MESSAGES
         ):
@@ -237,6 +212,8 @@ class Engine:
             result.crm_calls.append({"call": call, **logged})
 
         result.booking = decision.booking
+        if decision.reopened:
+            await crm("remove_tags", tags=[gw.TAG_CANCELLED])
         if decision.handoff:
             conv.status, conv.handoff_reason = HANDOFF, decision.handoff.reason
             result.handoff_reason = decision.handoff.reason
@@ -247,16 +224,36 @@ class Engine:
         if decision.mark_booked:
             await crm("set_stage", stage="booked")
             await crm("add_tags", tags=[gw.TAG_BOOKED])
-        reason = decision.handoff.reason if decision.handoff else decision.notify
-        if reason:
-            urgent = bool(decision.handoff and decision.handoff.urgent)
+
+        transcript = [*history, {"role": "homeowner", "text": text}]
+        if message is not None:
+            transcript.append({"role": "engine", "text": message.text})
+        lines = "\n".join(f"{m['role']}: {m['text']}" for m in transcript[-NOTE_MESSAGES:])
+        if decision.handoff:
+            urgent = decision.handoff.urgent
             await crm("add_tags", tags=[gw.TAG_HANDOFF] + ([gw.TAG_EMERGENCY] if urgent else []))
             await crm("remove_tags", tags=[gw.TAG_ACTIVE])
-            transcript = [*history, {"role": "homeowner", "text": text}]
-            if message is not None:
-                transcript.append({"role": "engine", "text": message.text})
-            lines = "\n".join(f"{m['role']}: {m['text']}" for m in transcript[-NOTE_MESSAGES:])
-            await crm("add_note", body=f"Booking engine handoff. Reason: {reason}\n\n{lines}")
+            note = f"Booking engine handoff. Reason: {decision.handoff.reason}"
+            await crm("add_note", body=f"{note}\n\n{lines}")
+        elif decision.cancelled:
+            await crm("add_tags", tags=[gw.TAG_CANCELLED])
+            note = "Booking engine: the homeowner cancelled their inspection by text."
+            await crm("add_note", body=f"{note}\n\n{lines}")
+        elif decision.opted_out:
+            still_booked = conv.appointment_id is not None and conv.booked_time is not None
+            await crm(
+                "add_tags", tags=[gw.TAG_OPTED_OUT] + ([gw.TAG_OPTOUT_BOOKED] if still_booked else [])
+            )
+            if still_booked:
+                when = format_slot(from_key(conv.booked_time, self.client.tz), self.client.tz)
+                await crm(
+                    "add_note",
+                    body=(
+                        "Booking engine: this contact opted out of texts and can no longer be "
+                        f"texted. Their inspection on {when} is STILL BOOKED and was not "
+                        f"cancelled. Call them if you need to reach them.\n\n{lines}"
+                    ),
+                )
 
     def _record(self, conv: Conversation, result: TurnResult, message_ids: list[str]) -> None:
         """Persist state + the turn, and emit the structured turn log."""

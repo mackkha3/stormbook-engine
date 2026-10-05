@@ -17,6 +17,9 @@ TAG_ACTIVE = "engine-active"
 TAG_HANDOFF = "engine-handoff"
 TAG_EMERGENCY = "engine-emergency"
 TAG_BOOKED = "booked"
+TAG_OPTED_OUT = "engine-opted-out"
+TAG_OPTOUT_BOOKED = "engine-optout-booked"   # opted out but still has an inspection booked
+TAG_CANCELLED = "engine-cancelled"
 
 
 class CrmGateway(ABC):

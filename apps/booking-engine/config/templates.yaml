@@ -19,6 +19,7 @@ deflect: "Good question. Your inspector will go over that with you on-site, sinc
 basic_who: "This is {company_name}. You called or reached out about a roof inspection. Want me to get one scheduled? I have {slot_1} or {slot_2}."
 basic_area: "We cover {service_area}. I can get an inspector out {slot_1} or {slot_2}. Which works?"
 is_bot: "I'm {company_name}'s automated scheduling assistant. A real inspector will meet you on-site. Does {slot_1} or {slot_2} work for you?"
+which_one: "Great! Which works better: {slot_1} or {slot_2}?"
 clarify: "Sorry, I didn't quite catch that. Would {slot_1} or {slot_2} work for your inspection?"
 reschedule: "No problem. I can move you to {slot_1} or {slot_2}. Which is better?"
 cancelled: "Your inspection is cancelled. If you change your mind, just text us here."

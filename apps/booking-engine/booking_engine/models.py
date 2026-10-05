@@ -13,7 +13,8 @@ SLOTS_OFFERED = "slots_offered"  # times are on the table (see current_offer)
 BOOKED = "booked"                # appointment exists (appointment_id, booked_time)
 HANDOFF = "handoff"              # a human owns it; the engine stays silent
 OPTED_OUT = "opted_out"          # never text again
-CLOSED = "closed"                # not interested / cancelled; the engine stays silent
+CLOSED = "closed"                # not interested; the engine stays silent
+CANCELLED = "cancelled"          # homeowner cancelled their booking; they may text to rebook
 
 STOPPED = {HANDOFF, OPTED_OUT, CLOSED}
 

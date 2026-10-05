@@ -6,8 +6,13 @@
 #             offered  the engine offered  1. Mon 10/5 at 11:00 AM   2. Tue 10/6 at 12:00 PM
 #             asked    the engine asked "what day and time work best for you?"
 #             booked   an inspection is booked for Mon 10/5 at 11:00 AM
+#             cancelled  that inspection was booked, then cancelled by the homeowner
 #   intent  the intent the model must return
 #   slot_choice / preferred_date / preferred_time_window   details it must extract (if listed)
+#   question_topic   for basic_question: who | area | other
+#   acknowledgment_only: true   nothing but "ok" / "thanks"
+#   live_not_opt_out: true   wording is ambiguous; live only checks it is NOT read as an opt-out
+#   keyword: true    caught by the code opt-out rule before the model is asked (skipped live)
 #   expect  the template the engine must answer with ("none" = send nothing)
 #
 # "Now" is Monday 2026-10-05 09:00 America/Chicago in every test.
@@ -21,6 +26,9 @@
 - {text: "Yes please, that would be great", state: fresh, intent: affirm, expect: offer_slots}
 - {text: "ok lets do it", state: fresh, intent: affirm, expect: offer_slots}
 - {text: "ok thanks", state: booked, intent: affirm, expect: none}
+- {text: "ok", state: cancelled, intent: affirm, acknowledgment_only: true, expect: none}
+- {text: "thanks", state: cancelled, intent: affirm, acknowledgment_only: true, expect: none}
+- {text: "actually yes lets get it back on the schedule", state: cancelled, intent: affirm, acknowledgment_only: false, expect: offer_slots}
 
 # --- pick_slot ------------------------------------------------------------
 - {text: "1", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
@@ -37,6 +45,9 @@
 - {text: "can u come sat morning", state: offered, intent: propose_time, preferred_date: "2026-10-10", preferred_time_window: "morning", expect: propose_time_match}
 - {text: "what about thursday afternoon", state: offered, intent: propose_time, preferred_date: "2026-10-08", preferred_time_window: "afternoon", expect: propose_time_match}
 - {text: "I work till 5, anything on sunday?", state: offered, intent: propose_time, preferred_date: "2026-10-11", expect: propose_time_no_match}
+- {text: "can you stop by tomorrow?", state: fresh, intent: propose_time, preferred_date: "2026-10-06", expect: propose_time_match}
+- {text: "could someone stop by saturday", state: fresh, intent: propose_time, preferred_date: "2026-10-10", expect: propose_time_match}
+- {text: "changed my mind, can you do friday morning", state: cancelled, intent: propose_time, preferred_date: "2026-10-09", preferred_time_window: "morning", expect: propose_time_match}
 - {text: "friday before 10", state: asked, intent: propose_time, preferred_date: "2026-10-09", preferred_time_window: "before 10:00", expect: propose_time_match}
 - {text: "wednesday morning would be best", state: asked, intent: propose_time, preferred_date: "2026-10-07", preferred_time_window: "morning", expect: propose_time_match}
 
@@ -57,14 +68,17 @@
 - {text: "do u do metal roofs or just shingles", state: fresh, intent: deferrable_question, expect: deflect}
 - {text: "how long does a new roof take", state: offered, intent: deferrable_question, expect: deflect}
 - {text: "whats the warranty", state: offered, intent: deferrable_question, expect: deflect}
+- {text: "how much would it have been", state: cancelled, intent: deferrable_question, expect: handoff}
 
 # --- basic_question -------------------------------------------------------
-- {text: "who dis", state: fresh, intent: basic_question, expect: basic_who}
-- {text: "who is this", state: fresh, intent: basic_question, expect: basic_who}
-- {text: "what company is this?", state: fresh, intent: basic_question, expect: basic_who}
-- {text: "why are you texting me", state: fresh, intent: basic_question, expect: basic_who}
-- {text: "do you cover my area", state: fresh, intent: basic_question, expect: basic_area}
-- {text: "do yall come out to Whitehouse", state: offered, intent: basic_question, expect: basic_area}
+- {text: "who dis", state: fresh, intent: basic_question, question_topic: who, expect: basic_who}
+- {text: "who is this", state: fresh, intent: basic_question, question_topic: who, expect: basic_who}
+- {text: "what company is this?", state: fresh, intent: basic_question, question_topic: who, expect: basic_who}
+- {text: "why are you texting me", state: fresh, intent: basic_question, question_topic: who, expect: basic_who}
+- {text: "do you cover my area", state: fresh, intent: basic_question, question_topic: area, expect: basic_area}
+- {text: "do yall come out to Whitehouse", state: offered, intent: basic_question, question_topic: area, expect: basic_area}
+- {text: "what are your hours", state: fresh, intent: basic_question, question_topic: other, expect: deflect}
+- {text: "are you guys licensed", state: offered, intent: basic_question, question_topic: other, expect: deflect}
 
 # --- is_bot ---------------------------------------------------------------
 - {text: "is this a robot", state: fresh, intent: is_bot, expect: is_bot}
@@ -78,7 +92,7 @@
 - {text: "can we do wednesday instead", state: booked, intent: reschedule, preferred_date: "2026-10-07", expect: propose_time_match}
 
 # --- cancel (after booking) -----------------------------------------------
-- {text: "cancel", state: booked, intent: cancel, expect: cancelled}
+- {text: "can we cancel monday", state: booked, intent: cancel, expect: cancelled}
 - {text: "never mind, cancel it", state: booked, intent: cancel, expect: cancelled}
 - {text: "i need to cancel my appointment", state: booked, intent: cancel, expect: cancelled}
 
@@ -92,6 +106,7 @@
 - {text: "i have an active leak in my kitchen right now", state: offered, intent: emergency, expect: emergency}
 - {text: "tree on my roof", state: fresh, intent: emergency, expect: emergency}
 - {text: "ceiling is dripping bad pls hurry", state: fresh, intent: emergency, expect: emergency}
+- {text: "water won't stop coming in", state: fresh, intent: emergency, expect: emergency}
 
 # --- not_interested -------------------------------------------------------
 - {text: "no thanks", state: fresh, intent: not_interested, expect: not_interested}
@@ -102,6 +117,8 @@
 
 # --- opt_out --------------------------------------------------------------
 - {text: "STOP", state: fresh, intent: opt_out, expect: none}
+- {text: "cancel", state: booked, intent: opt_out, keyword: true, expect: none}
+- {text: "Cancel", state: offered, intent: opt_out, keyword: true, expect: none}
 - {text: "stop", state: offered, intent: opt_out, expect: none}
 - {text: "unsubscribe", state: fresh, intent: opt_out, expect: none}
 - {text: "remove me from your list", state: fresh, intent: opt_out, expect: none}
@@ -115,3 +132,4 @@
 - {text: "?", state: fresh, intent: unclear, expect: clarify}
 - {text: "asdf", state: fresh, intent: unclear, expect: clarify}
 - {text: "the dog got out again", state: offered, intent: unclear, expect: clarify}
+- {text: "the leak stopped but there's damage", state: fresh, intent: unclear, live_not_opt_out: true, expect: clarify}

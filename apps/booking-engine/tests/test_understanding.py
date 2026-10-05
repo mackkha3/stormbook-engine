@@ -14,6 +14,8 @@ import pytest
 from booking_engine.understanding import (
     INTENTS,
     MODEL,
+    OUTPUT_SCHEMA,
+    SYSTEM_PROMPT,
     AnthropicUnderstander,
     TurnContext,
     UnderstandingError,
@@ -25,7 +27,8 @@ from tests.conftest import FIXTURES, NOW, SLOT_1, SLOT_2, Harness, U
 
 VALID = {
     "intent": "pick_slot", "confidence": 0.93, "slot_choice": 2, "preferred_date": None,
-    "preferred_time_window": None, "language": "en", "notes": "picked the second slot",
+    "preferred_time_window": None, "question_topic": None, "acknowledgment_only": False,
+    "language": "en", "notes": "picked the second slot",
 }
 MESSY = [
     "ya", "tmrw aft 3??", "how much is this gonna cost me", "who dis", "STOP",
@@ -82,6 +85,8 @@ def test_valid_json_is_parsed():
         json.dumps({**VALID, "preferred_time_window": "whenever"}),
         json.dumps({**VALID, "preferred_time_window": "after 27:00"}),
         json.dumps({**VALID, "preferred_date": "next tuesday"}),
+        json.dumps({**VALID, "question_topic": "pricing"}),
+        json.dumps({**VALID, "acknowledgment_only": "sort of"}),
         json.dumps({**VALID, "reply_to_homeowner": "Sure, it costs $200!"}),
         json.dumps({k: v for k, v in VALID.items() if k != "confidence"}),
     ],
@@ -154,14 +159,56 @@ async def test_engine_sends_the_model_at_most_six_prior_messages(h: Harness):
      "opt out", "dont text me again", "actually STOP", "ok stop", "please stop", "Stop!!"],
 )
 def test_opt_out_keywords_are_caught_in_code(text):
-    assert keyword_opt_out(text)
+    assert keyword_opt_out([text])
 
 
 @pytest.mark.parametrize(
-    "text", ["can you stop by tuesday", "yes", "cancel", "the bus stop is near my house", "nvm"]
+    "keyword", ["STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "OPTOUT", "REVOKE"]
+)
+def test_each_carrier_keyword_alone_is_an_opt_out(keyword):
+    for variant in (keyword, keyword.lower(), keyword.title(), f"  {keyword.lower()} \n"):
+        assert keyword_opt_out([variant])
+    assert keyword_opt_out(["yes that works", keyword.lower()])    # its own text in a burst
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["can you stop by tomorrow?", "could someone stop by saturday", "water won't stop coming in",
+     "the leak stopped but there's damage",
+     # ...and the same sort of thing shouted, shortened, or misspelled
+     "CAN YOU STOP BY TOMORROW?", "WATER WONT STOP COMING IN", "it wont stop", "leak wont stop",
+     "rain finally stopped", "it won't STOP leaking", "cant stop it", "stop by anytime",
+     "how do i stop the leak until you get here", "take me off tuesday and put me on wednesday",
+     "can you stop by tuesday", "yes", "the bus stop is near my house", "nvm",
+     "can we cancel tuesday", "i need to cancel my appointment", "cancel it", "please cancel",
+     "the end of the week works", "quit calling my husband he is at work, text me"],
 )
 def test_ordinary_messages_are_not_opt_outs(text):
-    assert not keyword_opt_out(text)
+    assert not keyword_opt_out([text])
+
+
+def test_no_fixture_trips_the_opt_out_rule_unless_it_is_an_opt_out():
+    for fixture in FIXTURES:
+        caught = keyword_opt_out([fixture["text"]])
+        if fixture["intent"] != "opt_out":
+            assert not caught, fixture["text"]
+        if fixture.get("keyword"):
+            assert caught, fixture["text"]
+
+
+def test_schema_and_prompt_carry_acknowledgment_only():
+    assert OUTPUT_SCHEMA["properties"]["acknowledgment_only"] == {"type": "boolean"}
+    assert "acknowledgment_only" in OUTPUT_SCHEMA["required"]
+    assert "acknowledgment_only" in SYSTEM_PROMPT
+    assert parse_understanding(json.dumps({**VALID, "acknowledgment_only": True})).acknowledgment_only
+
+
+def test_schema_and_prompt_carry_question_topic():
+    topic = OUTPUT_SCHEMA["properties"]["question_topic"]
+    assert topic["anyOf"][0]["enum"] == ["who", "area", "other"]
+    assert "question_topic" in OUTPUT_SCHEMA["required"] and "question_topic" in SYSTEM_PROMPT
+    u = parse_understanding(json.dumps({**VALID, "intent": "basic_question", "question_topic": "area"}))
+    assert u.question_topic == "area"
 
 
 # --- live eval: real model, real prompt (pytest -m live) -----------------------
@@ -173,6 +220,8 @@ async def test_live_model_classifies_fixture(fixture):
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         pytest.skip("ANTHROPIC_API_KEY not set")
+    if fixture.get("keyword"):
+        pytest.skip("caught by the code opt-out rule; the model is never asked")
     h = Harness()
     await h.reach(fixture["state"])
     conv, tz = h.conv, h.client.tz
@@ -187,12 +236,17 @@ async def test_live_model_classifies_fixture(fixture):
         history=h.store.recent_messages(conv.id) if conv else [],
     )
     u = await AnthropicUnderstander(api_key).understand(ctx)
+    if fixture.get("live_not_opt_out"):
+        assert u.intent != "opt_out", u.notes
+        return
     assert u.intent == fixture["intent"], u.notes
     assert u.language == "en"
     if u.intent != "opt_out":
         assert u.confidence >= 0.7
-    for key in ("slot_choice", "preferred_time_window"):
+    for key in ("slot_choice", "preferred_time_window", "question_topic", "acknowledgment_only"):
         if key in fixture:
             assert getattr(u, key) == fixture[key]
+    if u.intent != "basic_question":
+        assert u.question_topic is None
     if "preferred_date" in fixture:
         assert u.preferred_date == dt.date.fromisoformat(fixture["preferred_date"])

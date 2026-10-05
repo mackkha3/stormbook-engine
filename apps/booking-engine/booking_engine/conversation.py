@@ -8,107 +8,37 @@ cancel); the engine does the rendering, the safety check, and the CRM calls.
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from booking_engine.calendar.base import Calendar, CalendarError, SlotUnavailable
-from booking_engine.config_loader import ClientConfig
-from booking_engine.models import ACTIVE, BOOKED, CLOSED, OPTED_OUT, SLOTS_OFFERED, Conversation
+from booking_engine.calendar.base import CalendarError, SlotUnavailable
+from booking_engine.models import ACTIVE, BOOKED, CANCELLED, CLOSED, OPTED_OUT
 from booking_engine.slots import (
     closest,
-    eligible,
-    from_key,
     matching,
     pick_spread,
     slot_key,
     target_time,
 )
-from booking_engine.templates import Templates
-from booking_engine.understanding import Understanding
+from booking_engine.turn import Decision, Turn, handoff
 
 REQUIRED_TEMPLATES = {
     "offer_slots", "offer_more_slots", "ask_preference", "propose_time_match",
     "propose_time_no_match", "booked", "deflect", "basic_who", "basic_area", "is_bot",
-    "clarify", "reschedule", "cancelled", "handoff", "emergency", "not_interested",
+    "which_one", "clarify", "reschedule", "cancelled", "handoff", "emergency", "not_interested",
     "no_slots_available",
 }
-_AREA_QUESTION = re.compile(
-    r"\b(area|areas|cover|service|serve|located|location|where|far|zip|county|city|town|come out to)\b",
-    re.IGNORECASE,
-)
 
-
-@dataclass
-class Handoff:
-    reason: str
-    urgent: bool = False
-
-
-@dataclass
-class Decision:
-    template_key: str | None = None
-    slots: list[datetime] = field(default_factory=list)     # fill {slot_1}, {slot_2}, ...
-    booked_time: datetime | None = None                     # fills {booked_time}
-    verified: list[datetime] = field(default_factory=list)  # times the calendar returned this turn
-    handoff: Handoff | None = None
-    notify: str | None = None            # tell the roofer without a handoff message (cancel)
-    booking: dict | None = None          # what happened on the calendar, for the turn log
-    mark_booked: bool = False            # move opportunity to `booked`, add the booked tag
-
-
-def handoff(reason: str, *, template: str | None = "handoff", urgent: bool = False) -> Decision:
-    return Decision(template_key=template, handoff=Handoff(reason, urgent))
-
-
-@dataclass
-class Turn:
-    conv: Conversation
-    u: Understanding
-    text: str
-    client: ClientConfig
-    calendar: Calendar
-    templates: Templates
-    now: datetime
-    prev_unclear: int = 0
-    prev_none_work: int = 0
-
-    @property
-    def current(self) -> list[datetime]:
-        return [from_key(k, self.client.tz) for k in self.conv.current_offer]
-
-    @property
-    def has_preference(self) -> bool:
-        return self.u.preferred_date is not None or self.u.preferred_time_window is not None
-
-    async def free(self, *, unoffered_only: bool = False) -> list[datetime]:
-        """Fresh free slots from the calendar, inside lead time and search window."""
-        c = self.client
-        raw = await self.calendar.free_slots(
-            self.now + timedelta(minutes=c.min_lead_time_minutes),
-            self.now + timedelta(days=c.search_window_days),
-        )
-        return eligible(
-            raw, now=self.now, tz=c.tz, min_lead_minutes=c.min_lead_time_minutes,
-            window_days=c.search_window_days,
-            exclude=set(self.conv.offered_slots) if unoffered_only else None,
-        )
-
-    def set_offer(self, key: str, slots: list[datetime], verified: list[datetime]) -> Decision:
-        conv = self.conv
-        conv.current_offer = [slot_key(s) for s in slots]
-        conv.offered_slots = sorted(set(conv.offered_slots) | set(conv.current_offer))
-        conv.offer_template = key
-        if conv.status == ACTIVE:
-            conv.status = SLOTS_OFFERED
-        return Decision(template_key=key, slots=slots, verified=verified)
+REOPEN_INTENTS = ("affirm", "propose_time", "pick_slot", "none_work")
 
 
 async def decide(t: Turn) -> Decision:
+    was_cancelled = t.conv.status == CANCELLED
     try:
-        return await _decide(t)
+        decision = await _decide(t)
     except CalendarError as exc:
-        return handoff(f"calendar_error: {exc}")
+        decision = handoff(f"calendar_error: {exc}")
+    decision.reopened = was_cancelled and t.conv.status != CANCELLED
+    return decision
 
 
 async def _decide(t: Turn) -> Decision:
@@ -126,15 +56,24 @@ async def _decide(t: Turn) -> Decision:
         intent = "propose_time"
 
     if intent == "opt_out":
-        conv.status = OPTED_OUT
+        conv.status = OPTED_OUT      # a booked appointment is deliberately left in place
         conv.current_offer = []
-        return Decision()
+        return Decision(opted_out=True)
     if intent == "hostile":
         return handoff("hostile", template=None)
     if intent == "emergency":
         return handoff("emergency", template="emergency", urgent=True)
     if intent == "human_request":
         return handoff("human_request")
+    if conv.status == CANCELLED:
+        # They cancelled earlier. A bare "ok"/"thanks" needs no reply; a clear wish to
+        # schedule reopens the conversation; anything else goes to a human.
+        if u.acknowledgment_only and intent in ("affirm", "unclear"):
+            return Decision()
+        if intent not in REOPEN_INTENTS:
+            return handoff(f"{intent}_after_cancellation")
+        conv.status = ACTIVE
+        conv.engine_message_count = 0        # the message cap restarts with the new attempt
     if intent == "cancel" and booked:
         return await _cancel(t)
     if intent in ("cancel", "not_interested"):
@@ -157,7 +96,7 @@ async def _decide(t: Turn) -> Decision:
             return await _offer(t, "offer_slots")
         if conv.offer_template == "propose_time_match":
             return await _book(t, t.current[0])      # "yes" to "want me to lock that in?"
-        return await _unclear(t)                     # "yes" to "1 or 2?" — ask which
+        return await _offer(t, "which_one")          # "yes" to "1 or 2?" — ask which
     if intent == "pick_slot":
         if u.slot_choice and u.slot_choice <= len(conv.current_offer):
             return await _book(t, t.current[u.slot_choice - 1])
@@ -178,7 +117,9 @@ async def _decide(t: Turn) -> Decision:
     if intent == "deferrable_question":
         return await _offer(t, "deflect")
     if intent == "basic_question":
-        return await _offer(t, "basic_area" if _AREA_QUESTION.search(t.text) else "basic_who")
+        # "who" or no topic → who we are; "other" has no approved answer → defer to the inspector.
+        by_topic = {"area": "basic_area", "other": "deflect"}
+        return await _offer(t, by_topic.get(u.question_topic, "basic_who"))
     if intent == "is_bot":
         return await _offer(t, "is_bot")
     return await _unclear(t)
@@ -295,11 +236,13 @@ async def _book(t: Turn, slot: datetime) -> Decision:
 
 async def _cancel(t: Turn) -> Decision:
     conv = t.conv
-    await t.calendar.cancel(conv.appointment_id)
-    conv.status = CLOSED
+    appointment_id = conv.appointment_id
+    await t.calendar.cancel(appointment_id)
+    conv.status = CANCELLED
     conv.current_offer = []
+    conv.appointment_id = conv.booked_time = None
     return Decision(
         template_key="cancelled",
-        notify="homeowner_cancelled",
-        booking={"action": "cancelled", "appointment_id": conv.appointment_id},
+        cancelled=True,
+        booking={"action": "cancelled", "appointment_id": appointment_id},
     )

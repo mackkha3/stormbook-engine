@@ -41,6 +41,8 @@ class Understanding(BaseModel):
     slot_choice: int | None = Field(default=None, ge=1)
     preferred_date: dt.date | None = None
     preferred_time_window: str | None = None
+    question_topic: Literal["who", "area", "other"] | None = None
+    acknowledgment_only: bool = False
     language: str = "en"
     notes: str = ""
 
@@ -73,31 +75,42 @@ class Understander(Protocol):
     async def understand(self, ctx: TurnContext) -> Understanding: ...
 
 
-# Standard carrier opt-out words, plus unambiguous phrases. Checked in code on
-# every message so an opt-out is honoured even if the model misreads it.
-_OPT_OUT_WORDS = {"stop", "stopall", "unsubscribe", "end", "quit", "optout", "revoke"}
+# Carrier opt-out keywords. When one of these is the ENTIRE message, the carrier has
+# already blocked the number, so it is an opt-out in every conversation state — even
+# "cancel" from someone with a booked inspection.
+CARRIER_OPT_OUT = {"stop", "stopall", "unsubscribe", "cancel", "end", "quit", "optout", "revoke"}
+# Looser matches, for messages that clearly ask to stop receiving texts: the keyword
+# with punctuation ("Stop."), an explicit phrase ("stop texting me", "remove me"), or
+# "stop" with nothing around it but filler ("ok stop", "please stop now").
+# Ordinary uses of the word must NOT match: "can you stop by tomorrow", "the leak won't
+# stop", "it stopped raining". "cancel" is also not here: "can we cancel tuesday" is the
+# cancel intent.
+_OPT_OUT_WORDS = CARRIER_OPT_OUT - {"cancel"}
 _OPT_OUT_PHRASES = re.compile(
-    r"\b(?:unsubscribe|opt\s*-?out|remove me|take me off|stop (?:texting|messaging|contacting)"
+    r"\b(?:unsubscribe|opt\s*-?out|remove me"
+    r"|take me off (?:of )?(?:your|ur|the|this) (?:list|texts?|messages?)"
+    r"|stop (?:texting|messaging|contacting|txting)"
     r"|do ?n[o']?t (?:text|message|contact) me)\b"
+)
+_STOP_WITH_FILLER = re.compile(
+    r"^(?:(?:ok|okay|k|please|pls|plz|actually|just|no|hey|i said)\s+)*stop"
+    r"(?:\s+(?:please|pls|plz|now|it|this|already))*$"
 )
 
 
-# "STOP" shouted anywhere, or a short line that ends in "stop" ("ok stop", "please stop").
-_STOP_SHOUTED = re.compile(r"\bSTOP\b")
-_STOP_SHORT = re.compile(r"^(?:[a-z']+\s+){0,2}stop(?:\s+(?:please|pls|now|it|this))?$")
-
-
-def keyword_opt_out(text: str) -> bool:
-    if _STOP_SHOUTED.search(text):
-        return True
-    for line in text.lower().splitlines():
-        words = re.sub(r"[^a-z' ]", " ", line).strip()
-        if (
-            words.replace(" ", "") in _OPT_OUT_WORDS
-            or _OPT_OUT_PHRASES.search(line)
-            or _STOP_SHORT.match(words)
-        ):
+def keyword_opt_out(messages: list[str]) -> bool:
+    """True if any single message in the turn is an opt-out by code rule."""
+    for message in messages:
+        if message.strip().lower() in CARRIER_OPT_OUT:
             return True
+        for line in message.lower().splitlines():
+            words = re.sub(r"[^a-z' ]", " ", line).strip()
+            if (
+                words.replace(" ", "") in _OPT_OUT_WORDS
+                or _OPT_OUT_PHRASES.search(line)
+                or _STOP_WITH_FILLER.match(words)
+            ):
+                return True
     return False
 
 
@@ -123,6 +136,8 @@ the company covers their area.
 - is_bot: asks whether this is a bot, AI, automated, or a real person.
 - reschedule: has a booked appointment and wants to move it.
 - cancel: has a booked appointment and wants to cancel it ("cancel", "never mind").
+(If conversation_status is "cancelled", they already cancelled: "yes" / "actually let's \
+do it" is affirm, a named day is propose_time.)
 - human_request: wants a call or a person ("can someone call me").
 - emergency: water actively coming in, active leak, tree on the roof, ceiling \
 collapsing, or any other urgent damage or safety issue.
@@ -146,6 +161,12 @@ next occurrence of a weekday, never a past date. Else null.
 - preferred_time_window: exactly one of "morning", "afternoon", "evening", \
 "after HH:MM", "before HH:MM" (24-hour clock), else null. "after 3" for an inspection \
 means "after 15:00"; an exact time such as "at 2pm" becomes "after 14:00".
+- question_topic: only for basic_question, what they are asking: "who" (who is \
+texting, which company, why am I getting this), "area" (whether the company covers or \
+comes out to their location), or "other". Null for every other intent.
+- acknowledgment_only: true when the message is nothing more than an acknowledgement \
+or thanks ("ok", "thanks", "got it", "sounds good", a thumbs up) and asks for nothing. \
+False if they want anything, including "yes" to scheduling or rebooking.
 - language: ISO 639-1 code of the homeowner's message ("en", "es", ...). Slang, typos \
 and texting shorthand in English are still "en".
 - notes: a short internal reason for your choice.
@@ -161,12 +182,17 @@ OUTPUT_SCHEMA: dict[str, Any] = {
         "slot_choice": {"type": ["integer", "null"]},
         "preferred_date": {"type": ["string", "null"]},
         "preferred_time_window": {"type": ["string", "null"]},
+        "question_topic": {
+            "anyOf": [{"type": "string", "enum": ["who", "area", "other"]}, {"type": "null"}]
+        },
+        "acknowledgment_only": {"type": "boolean"},
         "language": {"type": "string"},
         "notes": {"type": "string"},
     },
     "required": [
         "intent", "confidence", "slot_choice", "preferred_date",
-        "preferred_time_window", "language", "notes",
+        "preferred_time_window", "question_topic", "acknowledgment_only",
+        "language", "notes",
     ],
     "additionalProperties": False,
 }
