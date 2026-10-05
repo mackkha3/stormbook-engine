@@ -1,0 +1,283 @@
+"""The turn pipeline: inbound texts → understanding → decision → safe send → record.
+
+Wires the pieces together for one client. No conversation rules live here
+(see conversation.py) and no wording (see config/templates.yaml); this module
+enforces the cross-cutting guarantees: dedupe, one reply per turn, the
+confidence / language / opt-out rules, the message cap, the output safety
+check, and "when anything goes wrong, hand off".
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
+
+from booking_engine import gateway as gw
+from booking_engine.calendar.base import Calendar
+from booking_engine.config_loader import ClientConfig, ConfigError
+from booking_engine.conversation import REQUIRED_TEMPLATES, Decision, Turn, decide, handoff
+from booking_engine.debounce import Debouncer
+from booking_engine.logger import get
+from booking_engine.models import BOOKED, HANDOFF, OPTED_OUT, STOPPED, Conversation
+from booking_engine.slots import format_slot, from_key
+from booking_engine.store import Store
+from booking_engine.templates import (
+    RenderedMessage,
+    TemplateError,
+    Templates,
+    UnsafeOutput,
+    static_violation,
+)
+from booking_engine.understanding import (
+    TurnContext,
+    Understander,
+    Understanding,
+    UnderstandingError,
+    keyword_opt_out,
+)
+
+log = get(__name__)
+
+MIN_CONFIDENCE = 0.7
+MAX_ENGINE_MESSAGES = 8      # without a booking; the next reply becomes a handoff
+NOTE_MESSAGES = 6
+
+
+@dataclass(frozen=True)
+class Contact:
+    contact_id: str
+    phone: str
+    name: str | None = None
+
+
+@dataclass(frozen=True)
+class InboundMessage:
+    message_id: str
+    body: str
+    timestamp: datetime | None = None
+
+
+@dataclass
+class TurnResult:
+    inbound_text: str
+    status: str
+    intent: str | None = None
+    understanding: dict | None = None
+    template_key: str | None = None
+    reply: str | None = None
+    booking: dict | None = None
+    handoff_reason: str | None = None
+    crm_calls: list[dict[str, Any]] = field(default_factory=list)
+    ignored: bool = False
+
+
+class Engine:
+    def __init__(
+        self,
+        *,
+        client: ClientConfig,
+        templates: Templates,
+        store: Store,
+        understander: Understander,
+        calendar: Calendar,
+        gateway: gw.CrmGateway,
+        debounce_seconds: float = 8.0,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        on_turn: Callable[[TurnResult], None] | None = None,
+    ) -> None:
+        templates.require(REQUIRED_TEMPLATES)
+        too_many = [k for k in REQUIRED_TEMPLATES if templates.slot_count(k) > client.slots_offered]
+        if too_many:
+            raise ConfigError(
+                f"{client.client_slug}: slots_offered is {client.slots_offered} but these "
+                f"templates show more times than that: {sorted(too_many)}"
+            )
+        for name in ("company_name", "company_phone", "service_area_text"):
+            violation = static_violation(getattr(client, name))
+            if violation:
+                raise ConfigError(
+                    f"{client.client_slug}: {name} breaks an output rule ({violation}), so "
+                    "every message containing it would be blocked"
+                )
+        self.client, self.templates, self.store = client, templates, store
+        self.understander, self.calendar, self.gateway = understander, calendar, gateway
+        self._clock = clock
+        self._on_turn = on_turn
+        self.debouncer = Debouncer(debounce_seconds, self._handle_batch)
+
+    # --- inbound ---------------------------------------------------------
+
+    def receive(self, contact: Contact, message: InboundMessage) -> bool:
+        """Accept one inbound text. False if this message id was already seen."""
+        if not self.store.register_inbound(self.client.client_slug, message.message_id):
+            log.info("duplicate_inbound_ignored", extra={"message_id": message.message_id})
+            return False
+        self.debouncer.submit(contact.contact_id, (contact, message))
+        return True
+
+    async def _handle_batch(self, _key: str, items: list[tuple[Contact, InboundMessage]]) -> None:
+        result = await self.handle_turn(items[-1][0], [message for _, message in items])
+        if self._on_turn is not None:
+            self._on_turn(result)
+
+    # --- one turn --------------------------------------------------------
+
+    async def handle_turn(self, contact: Contact, messages: list[InboundMessage]) -> TurnResult:
+        """Process one debounced turn. Sends at most one reply."""
+        conv = self.store.get_or_create(
+            self.client.client_slug, contact.contact_id, contact.phone, contact.name
+        )
+        text = "\n".join(m.body.strip() for m in messages if m.body.strip())
+        result = TurnResult(inbound_text=text, status=conv.status)
+        try:
+            await self._run(conv, text, result)
+        except Exception as exc:
+            # Never leave a homeowner in limbo on a bug or an outage: a human takes over.
+            log.exception("turn_failed", extra={"contact_id": contact.contact_id})
+            conv.status, conv.handoff_reason = HANDOFF, f"internal_error: {type(exc).__name__}"
+            result.handoff_reason = conv.handoff_reason
+        self._record(conv, result, [m.message_id for m in messages])
+        return result
+
+    async def _run(self, conv: Conversation, text: str, result: TurnResult) -> None:
+        tz = self.client.tz
+        now = self._clock().astimezone(tz)
+        history = self.store.recent_messages(conv.id, NOTE_MESSAGES)
+
+        if conv.status in STOPPED:
+            result.ignored = True
+            if keyword_opt_out(text):
+                conv.status = OPTED_OUT
+            return
+
+        decision: Decision | None = None
+        u: Understanding | None = None
+        if keyword_opt_out(text):
+            u = Understanding(intent="opt_out", confidence=1.0, notes="opt-out keyword (code rule)")
+        else:
+            try:
+                u = await self.understander.understand(
+                    TurnContext(
+                        message=text, now=now, status=conv.status,
+                        offered=[from_key(k, tz) for k in conv.current_offer],
+                        booked_time=from_key(conv.booked_time, tz) if conv.booked_time else None,
+                        awaiting_preference=conv.awaiting_preference, history=history,
+                    )
+                )
+            except UnderstandingError as exc:
+                log.error("understanding_failed", extra={"error": str(exc)})
+                decision = handoff("understanding_failed")
+
+        if u is not None:
+            result.understanding = u.model_dump(mode="json")
+            if u.intent != "opt_out":       # opt_out always wins, whatever else is true
+                if not u.language.lower().startswith("en"):
+                    decision = handoff(f"non_english:{u.language}")
+                elif u.confidence < MIN_CONFIDENCE:
+                    u = u.model_copy(update={"intent": "unclear"})
+            result.intent = u.intent
+            if decision is None:
+                decision = await decide(
+                    Turn(conv=conv, u=u, text=text, client=self.client,
+                         calendar=self.calendar, templates=self.templates, now=now)
+                )
+
+        if (
+            decision.template_key and not decision.handoff and not decision.notify
+            and conv.status not in (BOOKED, *STOPPED)
+            and conv.engine_message_count >= MAX_ENGINE_MESSAGES
+        ):
+            decision = handoff("max_messages_without_booking")
+
+        message, decision = self._render_safely(decision)
+        await self._apply(conv, decision, message, history, text, result)
+
+    def _render_safely(self, decision: Decision) -> tuple[RenderedMessage | None, Decision]:
+        """Render the reply and run the output safety check; on failure, hand off instead."""
+        if decision.template_key is None:
+            return None, decision
+        try:
+            return self._render(decision), decision
+        except (UnsafeOutput, TemplateError) as exc:
+            reason = exc.reason if isinstance(exc, UnsafeOutput) else str(exc)
+            log.error("output_rejected", extra={"template": decision.template_key, "why": reason})
+            fallback = handoff(f"output_rejected:{reason}")
+            fallback.booking = decision.booking
+            try:
+                return self._render(fallback), fallback
+            except (UnsafeOutput, TemplateError):
+                fallback.template_key = None
+                return None, fallback
+
+    def _render(self, decision: Decision) -> RenderedMessage:
+        tz, c = self.client.tz, self.client
+        variables = {
+            "company_name": c.company_name,
+            "company_phone": c.company_phone,
+            "service_area": c.service_area_text,
+            **{f"slot_{i}": format_slot(s, tz) for i, s in enumerate(decision.slots, start=1)},
+        }
+        if decision.booked_time is not None:
+            variables["booked_time"] = format_slot(decision.booked_time, tz)
+        message = self.templates.render(decision.template_key, variables)
+        self.templates.check_output(message, [format_slot(s, tz) for s in decision.verified])
+        return message
+
+    async def _apply(
+        self, conv: Conversation, decision: Decision, message: RenderedMessage | None,
+        history: list[dict[str, str]], text: str, result: TurnResult,
+    ) -> None:
+        contact_id = conv.contact_id
+
+        async def crm(call: str, **kwargs: Any) -> None:
+            await getattr(self.gateway, call)(contact_id, **kwargs)
+            logged = {k: (v.text if isinstance(v, RenderedMessage) else v) for k, v in kwargs.items()}
+            result.crm_calls.append({"call": call, **logged})
+
+        result.booking = decision.booking
+        if decision.handoff:
+            conv.status, conv.handoff_reason = HANDOFF, decision.handoff.reason
+            result.handoff_reason = decision.handoff.reason
+        if message is not None:
+            await crm("send_sms", message=message)
+            conv.engine_message_count += 1
+            result.template_key, result.reply = message.key, message.text
+        if decision.mark_booked:
+            await crm("set_stage", stage="booked")
+            await crm("add_tags", tags=[gw.TAG_BOOKED])
+        reason = decision.handoff.reason if decision.handoff else decision.notify
+        if reason:
+            urgent = bool(decision.handoff and decision.handoff.urgent)
+            await crm("add_tags", tags=[gw.TAG_HANDOFF] + ([gw.TAG_EMERGENCY] if urgent else []))
+            await crm("remove_tags", tags=[gw.TAG_ACTIVE])
+            transcript = [*history, {"role": "homeowner", "text": text}]
+            if message is not None:
+                transcript.append({"role": "engine", "text": message.text})
+            lines = "\n".join(f"{m['role']}: {m['text']}" for m in transcript[-NOTE_MESSAGES:])
+            await crm("add_note", body=f"Booking engine handoff. Reason: {reason}\n\n{lines}")
+
+    def _record(self, conv: Conversation, result: TurnResult, message_ids: list[str]) -> None:
+        """Persist state + the turn, and emit the structured turn log."""
+        self.store.save(conv)
+        result.status = conv.status
+        self.store.add_turn(
+            conv.id, inbound_text=result.inbound_text, inbound_message_ids=message_ids,
+            model_output=result.understanding, intent=result.intent,
+            template_key=result.template_key, outbound_text=result.reply,
+            crm_calls=result.crm_calls, booking_result=result.booking,
+            handoff_reason=result.handoff_reason, status_after=conv.status,
+        )
+        log.info(
+            "turn",
+            extra={
+                "client": self.client.client_slug, "contact_id": conv.contact_id,
+                "message_ids": message_ids, "inbound_text": result.inbound_text,
+                "model_output": result.understanding, "intent": result.intent,
+                "template_key": result.template_key, "outbound_text": result.reply,
+                "crm_calls": result.crm_calls, "booking_result": result.booking,
+                "handoff_reason": result.handoff_reason, "status": conv.status,
+                "ignored": result.ignored,
+            },
+        )

@@ -1,0 +1,22 @@
+# One file per roofer client. Replace every "..." / XXXXXXXXXX placeholder with
+# the real value from GHL before the webhook server will start (Phase 2).
+# The terminal simulator runs fine with the placeholders.
+client_slug: roof-demo
+company_name: "Roof Demo"
+company_phone: "+1XXXXXXXXXX"          # shown in emergency/handoff lines
+ghl_location_id: "..."
+ghl_token_env: "GHL_TOKEN_ROOF_DEMO"   # name of env var holding the token
+calendar_id: "..."
+pipeline_id: "..."
+stage_ids:
+  texted: "..."
+  replied: "..."
+  booked: "..."
+  no_response: "..."
+timezone: "America/Chicago"
+inspection_duration_minutes: 60        # default 60, configurable per client
+slots_offered: 2                       # how many times to offer at once
+min_lead_time_minutes: 120             # never offer a slot sooner than this
+search_window_days: 7                  # how far ahead to look for slots
+service_area_text: "Tyler and the surrounding East Texas area"
+handoff_notify: ["roofer"]             # handoff alerts go through GHL

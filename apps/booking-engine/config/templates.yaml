@@ -1,0 +1,28 @@
+# ALL homeowner-facing text lives in this file. Edit wording here; no code changes needed.
+#
+# Variables you can use: {company_name} {slot_1} {slot_2} {booked_time}
+#                        {service_area} {company_phone}
+#
+# Rules the engine enforces on every message before it is sent:
+#   - no dollar amounts
+#   - none of: deductible, guarantee, insurance will, covered by insurance, free roof, waive
+#   - no dates or times except the {slot_N} / {booked_time} variables
+# A template that breaks a rule is rejected at startup.
+
+offer_slots: "Great! I can get an inspector out {slot_1} or {slot_2}. Which works better? Just reply 1 or 2."
+offer_more_slots: "No problem. How about {slot_1} or {slot_2}? Reply 1 or 2."
+ask_preference: "No problem. What day and time work best for you? I'll find the closest opening."
+propose_time_match: "{slot_1} is open. Want me to lock that in? Or {slot_2} also works."
+propose_time_no_match: "That time's taken, but I have {slot_1} or {slot_2}. Would either work?"
+booked: "You're all set for {booked_time}. Your {company_name} inspector will meet you at the property. Reply here if anything changes."
+deflect: "Good question. Your inspector will go over that with you on-site, since it depends on what they find. Does {slot_1} or {slot_2} work better?"
+basic_who: "This is {company_name}. You called or reached out about a roof inspection. Want me to get one scheduled? I have {slot_1} or {slot_2}."
+basic_area: "We cover {service_area}. I can get an inspector out {slot_1} or {slot_2}. Which works?"
+is_bot: "I'm {company_name}'s automated scheduling assistant. A real inspector will meet you on-site. Does {slot_1} or {slot_2} work for you?"
+clarify: "Sorry, I didn't quite catch that. Would {slot_1} or {slot_2} work for your inspection?"
+reschedule: "No problem. I can move you to {slot_1} or {slot_2}. Which is better?"
+cancelled: "Your inspection is cancelled. If you change your mind, just text us here."
+handoff: "Thanks! Someone from {company_name} will follow up with you shortly."
+emergency: "If water is coming in right now, please call {company_phone} so we can help immediately. I'm alerting the team now."
+not_interested: "Understood, thanks for letting us know. If you ever need us, just text here."
+no_slots_available: "Thanks! Someone from {company_name} will reach out shortly to find a time that works."
