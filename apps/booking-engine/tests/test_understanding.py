@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import datetime as dt
+import inspect
 import json
-import os
 from types import SimpleNamespace
 
 import anthropic
 import httpx2
 import pytest
+from anthropic.types import JSONOutputFormatParam
 
+from booking_engine.settings import APP_ROOT, Settings
 from booking_engine.understanding import (
     INTENTS,
     MODEL,
@@ -106,9 +108,52 @@ async def test_request_uses_haiku_temperature_zero_and_a_strict_schema():
     await AnthropicUnderstander("k", client=client).understand(_ctx())
     call = client.calls[0]
     assert call["model"] == MODEL == "claude-haiku-4-5-20251001"
-    assert call["temperature"] == 0
+    assert call["extra_body"] == {"temperature": 0}
     schema = call["output_config"]["format"]
     assert schema["type"] == "json_schema" and schema["schema"]["additionalProperties"] is False
+
+
+async def test_request_matches_the_installed_sdk_signature():
+    """Every keyword we pass must exist on the real AsyncAnthropic.messages.create.
+
+    The fake client accepts anything, so without this a parameter the SDK has
+    dropped (as 1.x did with `temperature`) only fails on a live call.
+    """
+    client = FakeClient(_response(VALID))
+    await AnthropicUnderstander("k", client=client).understand(_ctx())
+    real = anthropic.AsyncAnthropic(api_key="not-used").messages.create
+    signature = inspect.signature(real)
+    signature.bind(**client.calls[0])                     # TypeError on an unknown keyword
+    assert not {"temperature", "top_p", "top_k"} & set(client.calls[0])
+    # The structured-output parameter is typed as output_config.format = {type, schema}.
+    assert "output_config" in signature.parameters
+    assert set(JSONOutputFormatParam.__annotations__) == {"type", "schema"}
+    assert set(client.calls[0]["output_config"]["format"]) == {"type", "schema"}
+
+
+async def test_real_sdk_client_builds_the_request_without_a_type_error():
+    """Run our call through the real SDK up to the network, which is stubbed out."""
+    sent: list[dict] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        sent.append(json.loads(request.content))
+        return httpx2.Response(200, json={
+            "id": "msg_1", "type": "message", "role": "assistant", "model": MODEL,
+            "content": [{"type": "text", "text": json.dumps(VALID)}],
+            "stop_reason": "end_turn", "stop_sequence": None,
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        })
+
+    real = anthropic.AsyncAnthropic(
+        api_key="not-used", max_retries=0,
+        http_client=anthropic.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler)),
+    )
+    u = await AnthropicUnderstander("k", client=real).understand(_ctx())
+    assert u.intent == "pick_slot"
+    (body,) = sent
+    assert body["model"] == MODEL and body["temperature"] == 0
+    assert body["output_config"]["format"]["type"] == "json_schema"
+    assert body["output_config"]["format"]["schema"]["additionalProperties"] is False
 
 
 async def test_invalid_json_is_retried_once_then_succeeds():
@@ -217,9 +262,9 @@ def test_schema_and_prompt_carry_question_topic():
 @pytest.mark.live
 @pytest.mark.parametrize("fixture", FIXTURES, ids=[f["text"][:40] for f in FIXTURES])
 async def test_live_model_classifies_fixture(fixture):
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    api_key = Settings.from_env().anthropic_api_key      # reads apps/booking-engine/.env
     if not api_key:
-        pytest.skip("ANTHROPIC_API_KEY not set")
+        pytest.skip("ANTHROPIC_API_KEY not set (put it in apps/booking-engine/.env)")
     if fixture.get("keyword"):
         pytest.skip("caught by the code opt-out rule; the model is never asked")
     h = Harness()
@@ -250,3 +295,12 @@ async def test_live_model_classifies_fixture(fixture):
         assert u.question_topic is None
     if "preferred_date" in fixture:
         assert u.preferred_date == dt.date.fromisoformat(fixture["preferred_date"])
+
+
+def test_settings_load_the_api_key_from_the_app_env_file(tmp_path, monkeypatch):
+    """Live tests and the simulator get ANTHROPIC_API_KEY from .env with no manual export."""
+    assert APP_ROOT.name == "booking-engine" and (APP_ROOT / ".env.example").is_file()
+    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=sk-from-dotenv\n", encoding="utf-8")
+    monkeypatch.setattr("booking_engine.settings.APP_ROOT", tmp_path)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert Settings.from_env().anthropic_api_key == "sk-from-dotenv"

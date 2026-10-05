@@ -240,10 +240,12 @@ class AnthropicUnderstander:
         response = await self._client.messages.create(
             model=MODEL,
             max_tokens=400,
-            temperature=0,
             system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": build_user_content(ctx)}],
             output_config={"format": {"type": "json_schema", "schema": OUTPUT_SCHEMA}},
+            # anthropic 1.x dropped `temperature` from the method signature, but the API
+            # still accepts it for Haiku 4.5; extra_body is merged into the request JSON.
+            extra_body={"temperature": 0},
         )
         if response.stop_reason != "end_turn":
             raise ValueError(f"model stopped with {response.stop_reason!r}")

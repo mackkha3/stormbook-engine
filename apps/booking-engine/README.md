@@ -43,8 +43,8 @@ Never install packages globally: `uv` owns the environment.
 ## Tests
 
 ```bash
-uv run pytest               # 308 tests, no network, no API key
-uv run pytest -m live       # 86 more: real model vs. every fixture message (needs ANTHROPIC_API_KEY, costs a few cents)
+uv run pytest               # 311 tests, no network, no API key
+uv run pytest -m live       # 86 more: real model vs. every fixture message (reads ANTHROPIC_API_KEY from .env, costs a few cents)
 uv run ruff check .
 ```
 
