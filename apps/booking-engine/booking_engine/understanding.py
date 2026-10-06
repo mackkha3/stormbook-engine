@@ -62,6 +62,19 @@ def apply_confidence_rule(u: Understanding) -> Understanding:
     return u
 
 
+def apply_preference_rule(u: Understanding) -> Understanding:
+    """A named day or time is never ignored.
+
+    If the model called the message `none_work` or `affirm` but still extracted a
+    preferred date or time window, the homeowner said what they want, so it is handled
+    as `propose_time` with those preferences (when booked, that means a reschedule).
+    """
+    named = u.preferred_date is not None or u.preferred_time_window is not None
+    if named and u.intent in ("none_work", "affirm"):
+        return u.model_copy(update={"intent": "propose_time"})
+    return u
+
+
 class UnderstandingError(Exception):
     """The model call failed or returned something unusable, twice."""
 
@@ -134,9 +147,12 @@ Also plain acknowledgements or thanks ("ok thanks", "sounds good").
 - pick_slot: chooses one of the currently offered slots, by number ("1", "the second \
 one") or by description ("tuesday works", "the morning one"). Set slot_choice to its number.
 - propose_time: names their own day and/or time that is NOT simply one of the offered \
-slots ("can u do saturday", "tmrw after 3").
-- none_work: rejects the offered times without naming a specific one ("neither", \
-"those don't work", "anything next week?", "got anything later?").
+slots ("can u do saturday", "tmrw after 3"). Rejecting the offered times while naming \
+another day or time is propose_time, not none_work ("neither, how about friday", \
+"I work till 5, anything on sunday?").
+- none_work: rejects the offered times WITHOUT naming a specific day or time ("neither", \
+"those don't work", "anything next week?", "got anything later?"). A vague period such \
+as "next week" or "later" is not a specific day: leave preferred_date null.
 - deferrable_question: anything about price, cost, whether it is free, insurance, \
 deductibles, claims, how bad the damage is, materials, how long work takes, warranties.
 - basic_question: a factual question about the company itself: who is texting, which \
@@ -173,7 +189,9 @@ number that appears in the offered list.
 next occurrence of a weekday, never a past date. Else null.
 - preferred_time_window: exactly one of "morning", "afternoon", "evening", \
 "after HH:MM", "before HH:MM" (24-hour clock), else null. "after 3" for an inspection \
-means "after 15:00"; an exact time such as "at 2pm" becomes "after 14:00".
+means "after 15:00"; an exact time such as "at 2pm" becomes "after 14:00". A stated \
+constraint counts too: "I work till 5" or "I get off at 5" is "after 17:00", and "I \
+have to leave by 10" is "before 10:00".
 - question_topic: only for basic_question; null for every other intent. One of:
   "who" = who is texting, what company this is, why are you texting me.
   "area" = the service area or location: whether the company covers or comes out to \

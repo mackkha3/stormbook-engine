@@ -36,6 +36,7 @@ from booking_engine.understanding import (
     Understanding,
     UnderstandingError,
     apply_confidence_rule,
+    apply_preference_rule,
     keyword_opt_out,
 )
 
@@ -151,7 +152,7 @@ class Engine:
                 if not u.language.lower().startswith("en"):
                     decision = handoff(f"non_english:{u.language}")
                 else:
-                    u = apply_confidence_rule(u)
+                    u = apply_preference_rule(apply_confidence_rule(u))
             result.intent = u.intent
             if decision is None:
                 decision = await decide(

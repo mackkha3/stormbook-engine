@@ -44,7 +44,8 @@
 - {text: "tmrw aft 3??", state: fresh, intent: propose_time, preferred_date: "2026-10-06", preferred_time_window: "after 15:00", expect: propose_time_match}
 - {text: "can u come sat morning", state: offered, intent: propose_time, preferred_date: "2026-10-10", preferred_time_window: "morning", expect: propose_time_match}
 - {text: "what about thursday afternoon", state: offered, intent: propose_time, preferred_date: "2026-10-08", preferred_time_window: "afternoon", expect: propose_time_match}
-- {text: "I work till 5, anything on sunday?", state: offered, intent: propose_time, preferred_date: "2026-10-11", expect: propose_time_no_match}
+- {text: "I work till 5, anything on sunday?", state: offered, intent: propose_time, preferred_date: "2026-10-11", preferred_time_window: "after 17:00", expect: propose_time_no_match}
+- {text: "neither, how about friday", state: offered, intent: propose_time, preferred_date: "2026-10-09", expect: propose_time_match}
 - {text: "can you stop by tomorrow?", state: fresh, intent: propose_time, preferred_date: "2026-10-06", expect: propose_time_match}
 - {text: "could someone stop by saturday", state: fresh, intent: propose_time, preferred_date: "2026-10-10", expect: propose_time_match}
 - {text: "changed my mind, can you do friday morning", state: cancelled, intent: propose_time, preferred_date: "2026-10-09", preferred_time_window: "morning", expect: propose_time_match}

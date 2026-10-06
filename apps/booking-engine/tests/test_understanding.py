@@ -23,6 +23,7 @@ from booking_engine.understanding import (
     TurnContext,
     UnderstandingError,
     apply_confidence_rule,
+    apply_preference_rule,
     build_user_content,
     keyword_opt_out,
     parse_understanding,
@@ -286,7 +287,8 @@ async def test_live_model_classifies_fixture(fixture):
     # Opened and closed inside this test's own event loop.
     async with AnthropicUnderstander(api_key) as understander:
         raw = await understander.understand(ctx)
-    u = apply_confidence_rule(raw)       # what the engine acts on: low confidence → unclear
+    # What the engine acts on: low confidence → unclear; a named day/time → propose_time.
+    u = apply_preference_rule(apply_confidence_rule(raw))
     if fixture.get("live_not_opt_out"):
         assert u.intent != "opt_out", u.notes
         return
@@ -395,3 +397,40 @@ async def test_simulator_closes_its_client_before_the_loop_ends(monkeypatch):
     args = argparse.Namespace(client="roof-demo", debounce=0.0, verbose=False)
     assert await simulate.run(args) == 0
     assert len(created) == 1 and created[0]._client.is_closed()
+
+
+# --- a named day or time is never ignored ------------------------------------------
+
+
+@pytest.mark.parametrize("intent", ["none_work", "affirm"])
+@pytest.mark.parametrize(
+    "named", [{"preferred_date": "2026-10-11"}, {"preferred_time_window": "after 17:00"},
+              {"preferred_date": "2026-10-11", "preferred_time_window": "after 17:00"}],
+)
+def test_none_work_or_affirm_with_a_named_day_or_time_becomes_propose_time(intent, named):
+    u = parse_understanding(json.dumps({**VALID, "slot_choice": None, "intent": intent, **named}))
+    routed = apply_preference_rule(u)
+    assert routed.intent == "propose_time"
+    assert (str(routed.preferred_date) if routed.preferred_date else None) == named.get("preferred_date")
+    assert routed.preferred_time_window == named.get("preferred_time_window")
+
+
+@pytest.mark.parametrize(
+    "intent", ["none_work", "affirm", "pick_slot", "reschedule", "cancel", "unclear", "opt_out"]
+)
+def test_preference_rule_leaves_everything_else_alone(intent):
+    plain = parse_understanding(json.dumps({**VALID, "slot_choice": None, "intent": intent}))
+    assert apply_preference_rule(plain).intent == intent            # nothing named
+    if intent not in ("none_work", "affirm"):
+        dated = plain.model_copy(update={"preferred_date": dt.date(2026, 10, 11)})
+        assert apply_preference_rule(dated).intent == intent
+
+
+def test_prompt_covers_rejecting_while_naming_a_time_and_work_hours():
+    assert (
+        "Rejecting the offered times while naming another day or time is propose_time"
+        in SYSTEM_PROMPT
+    )
+    assert "I work till 5, anything on sunday?" in SYSTEM_PROMPT
+    assert '"I work till 5" or "I get off at 5" is "after 17:00"' in SYSTEM_PROMPT
+    assert '"next week" or "later" is not a specific day' in SYSTEM_PROMPT

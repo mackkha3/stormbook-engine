@@ -409,3 +409,61 @@ async def test_anything_else_after_cancellation_hands_off(h: Harness, understand
     result = await h.say("...", understanding)
     assert (result.template_key, result.handoff_reason) == ("handoff", reason)
     assert h.conv.status == "handoff" and "engine-handoff" in h.gateway.tags_added()
+
+
+# --- a named day or time is never ignored ------------------------------------------
+
+SUNDAY = dt.date(2026, 10, 11)
+
+
+@pytest.mark.parametrize("window", [None, "after 17:00"])
+async def test_i_work_till_5_anything_on_sunday_is_handled_as_a_proposal(h: Harness, window):
+    """The live miss: the model said none_work (0.95) but did extract Sunday."""
+    await h.reach("offered")
+    offered_before = set(h.conv.current_offer)
+    result = await h.say(
+        "I work till 5, anything on sunday?",
+        U("none_work", confidence=0.95, preferred_date=SUNDAY, preferred_time_window=window),
+    )
+    assert result.understanding["intent"] == "none_work"          # what the model said, logged as-is
+    assert result.intent == "propose_time"                        # what the engine did with it
+    # No inspections on Sunday, so: "that time's taken" + the openings closest to it.
+    assert result.template_key == "propose_time_no_match" and result.handoff_reason is None
+    conv = h.conv
+    assert len(conv.current_offer) == 2 and not offered_before & set(conv.current_offer)
+    days = {dt.datetime.fromisoformat(k).astimezone(h.client.tz).date() for k in conv.current_offer}
+    assert all(abs((day - SUNDAY).days) <= 1 for day in days)     # Saturday or Monday, not "next up"
+    assert conv.none_work_streak == 0                             # not counted as a bare rejection
+
+
+async def test_neither_plus_a_day_offers_that_day_instead_of_just_more_slots(h: Harness):
+    await h.reach("offered")
+    result = await h.say("neither, how about friday",
+                         U("none_work", preferred_date=dt.date(2026, 10, 9)))
+    assert result.template_key == "propose_time_match" and result.reply.startswith("Fri 10/9 at ")
+
+
+async def test_yes_plus_a_time_window_is_a_proposal_not_a_generic_offer(h: Harness):
+    result = await h.say("yes but i work till 5",
+                         U("affirm", preferred_time_window="after 17:00"))
+    assert result.intent == "propose_time"
+    assert result.template_key in ("propose_time_match", "propose_time_no_match")
+    # Nothing is open after 5 PM, so the closest openings are the latest ones in the day.
+    hours = {dt.datetime.fromisoformat(k).astimezone(h.client.tz).hour for k in h.conv.current_offer}
+    assert hours == {15, 16}
+
+
+async def test_named_day_during_a_reschedule_is_still_a_reschedule(h: Harness):
+    await h.reach("booked")
+    await h.say("can we move it", U("reschedule"))
+    proposed = await h.say("neither, anything thursday?",
+                           U("none_work", preferred_date=dt.date(2026, 10, 8)))
+    assert proposed.intent == "propose_time" and proposed.template_key == "propose_time_match"
+    moved = await h.say("yes", U("affirm"))
+    assert moved.booking["action"] == "rescheduled" and len(h.calendar.appointments) == 1
+    assert next(iter(h.calendar.appointments.values())).slot.date() == dt.date(2026, 10, 8)
+
+
+async def test_low_confidence_still_wins_over_a_named_day(h: Harness):
+    result = await h.say("mumble sunday?", U("none_work", confidence=0.4, preferred_date=SUNDAY))
+    assert (result.intent, result.template_key) == ("unclear", "clarify")

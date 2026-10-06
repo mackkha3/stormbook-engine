@@ -43,14 +43,14 @@ Never install packages globally: `uv` owns the environment.
 ## Tests
 
 ```bash
-uv run pytest               # 333 tests, no network, no API key
-uv run pytest -m live       # 86 more: real model vs. every fixture message (reads ANTHROPIC_API_KEY from .env, costs a few cents)
+uv run pytest               # 354 tests, no network, no API key
+uv run pytest -m live       # 87 more: real model vs. every fixture message (reads ANTHROPIC_API_KEY from .env, costs a few cents)
 uv run ruff check .
 ```
 
 | File | Covers |
 |---|---|
-| `tests/fixtures/homeowner_messages.yaml` | 86 realistic homeowner texts across all 15 intents |
+| `tests/fixtures/homeowner_messages.yaml` | 87 realistic homeowner texts across all 15 intents |
 | `test_understanding.py` | JSON validation, retry-once-then-handoff, opt-out keywords, live model eval |
 | `test_conversation.py` | Every fixture → expected action; unclear/handoff/opt-out/cap rules |
 | `test_safety.py` | Output safety check: template-only, no dollar amounts, banned phrases, calendar-only times |
@@ -81,7 +81,8 @@ env var named by `ghl_token_env` is set.
    schema output) for the intent, with the last 6 messages and current state.
    A failed or invalid answer is retried once, then the turn is handed off.
 3. Code rules apply: an opt-out always wins, non-English hands off,
-   confidence under 0.7 becomes `unclear`. A message that is exactly a carrier
+   confidence under 0.7 becomes `unclear`, and a `none_work` or `affirm` that
+   names a day or time is handled as `propose_time`. A message that is exactly a carrier
    keyword (STOP, STOPALL, UNSUBSCRIBE, CANCEL, END, QUIT, OPTOUT, REVOKE) is an
    opt-out in every state, decided in code without asking the model.
 4. `conversation.py` picks the action: a template, slots from the calendar,
