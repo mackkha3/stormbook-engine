@@ -3,16 +3,16 @@
 # The terminal simulator runs fine with the placeholders.
 client_slug: roof-demo
 company_name: "Roof Demo"
-company_phone: "+1XXXXXXXXXX"          # shown in emergency/handoff lines
-ghl_location_id: "..."
+company_phone: "+15555550100"          # shown in emergency/handoff lines
+ghl_location_id: "ftnowUv7G6rev8jIL6Nj"
 ghl_token_env: "GHL_TOKEN_ROOF_DEMO"   # name of env var holding the token
-calendar_id: "..."
-pipeline_id: "..."
+calendar_id: "n7h9Vz1F7G4Lw8gbCCdF"
+pipeline_id: "YOUR_GHL_PIPELINE_ID"
 stage_ids:
-  texted: "..."
-  replied: "..."
-  booked: "..."
-  no_response: "..."
+  texted: "YOUR_GHL_STAGE_ID_TEXTED"
+  replied: "YOUR_GHL_STAGE_ID_REPLIED"
+  booked: "YOUR_GHL_STAGE_ID_BOOKED"
+  no_response: "YOUR_GHL_STAGE_ID_NO_RESPONSE"
 timezone: "America/Chicago"
 inspection_duration_minutes: 60        # default 60, configurable per client
 slots_offered: 2                       # how many times to offer at once
