@@ -137,26 +137,23 @@ two ids and fetches the text from GHL itself.
 | Config field | Where to find it |
 |---|---|
 | `ghl_location_id` | Settings → Business Profile → Location ID. Also in the URL: `/v2/location/<id>/...` |
-| `calendar_id` | First command below |
-| `pipeline_id`, `stage_ids.*` | Second command below. Stage ids are not shown in the GHL UI |
+| `calendar_id` | The helper below |
+| `pipeline_id`, `stage_ids.*` | The helper below. Stage ids are not shown in the GHL UI |
 | `ghl_token_env` | Name of the env var from step 1, not the token itself |
 
+With the token in `.env` (step 1), run from `apps/booking-engine`:
+
 ```bash
-export GHL_TOKEN='<the private integration token>'
-export LOC='<location id>'
-
-# Calendars: id + name
-curl -s "https://services.leadconnectorhq.com/calendars/?locationId=$LOC" \
-  -H "Authorization: Bearer $GHL_TOKEN" -H "Version: 2021-04-15"
-
-# Pipelines: id + name, each with its stages (id + name)
-curl -s "https://services.leadconnectorhq.com/opportunities/pipelines?locationId=$LOC" \
-  -H "Authorization: Bearer $GHL_TOKEN" -H "Version: 2021-07-28"
+uv run python -m booking_engine.ghl_ids --location <location id>
 ```
 
-Both also prove the token and its scopes work. Map your four stages to
-`texted`, `replied`, `booked` and `no_response`. The server refuses to start
-while any id is still a `...` placeholder or the token env var is empty.
+It prints every calendar (name + id) and every pipeline with its stages
+(name + id). It makes two read-only calls, changes nothing in GHL, and never
+prints the token. A clean run also proves the token and its read scopes work.
+
+Map your four stages to `texted`, `replied`, `booked` and `no_response`. The
+server refuses to start while any id is still a `...` placeholder or the
+token env var is empty.
 
 ## 7. Endpoints the engine calls
 

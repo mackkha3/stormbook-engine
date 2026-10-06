@@ -122,6 +122,18 @@ class FakeGhl:
         if method == "PUT" and path.startswith("/calendars/events/appointments/"):
             self.appointments[path.rsplit("/", 1)[1]].update(body)
             return httpx.Response(200, json={"id": path.rsplit("/", 1)[1]})
+        if method == "GET" and path == "/calendars/":
+            return httpx.Response(200, json={"calendars": [
+                {"id": CALENDAR, "name": "Roof inspections", "locationId": LOCATION},
+            ]})
+        if method == "GET" and path == "/opportunities/pipelines":
+            return httpx.Response(200, json={"pipelines": [{
+                "id": PIPELINE, "name": "Storm leads", "stages": [
+                    {"id": STAGES.texted, "name": "Texted"}, {"id": STAGES.replied, "name": "Replied"},
+                    {"id": STAGES.booked, "name": "Booked"},
+                    {"id": STAGES.no_response, "name": "No response"},
+                ],
+            }]})
         if path == "/opportunities/search":
             return httpx.Response(200, json={"opportunities": self.opportunities, "meta": {}})
         if method == "PUT" and path.startswith("/opportunities/"):

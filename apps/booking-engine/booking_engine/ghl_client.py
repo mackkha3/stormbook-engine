@@ -224,7 +224,23 @@ class GhlClient:
             version=VERSION_CALENDARS, json=fields,
         )
 
+    async def list_calendars(self) -> list[dict[str, Any]]:
+        """GET /calendars/. The sub-account's calendars (for finding calendar_id)."""
+        data = await self._request(
+            "GET", "/calendars/", version=VERSION_CALENDARS,
+            params={"locationId": self.location_id},
+        )
+        return [c for c in data.get("calendars") or [] if isinstance(c, dict)]
+
     # --- opportunities (Version 2021-07-28) -----------------------------------
+
+    async def list_pipelines(self) -> list[dict[str, Any]]:
+        """GET /opportunities/pipelines. Pipelines with their stages (for finding ids)."""
+        data = await self._request(
+            "GET", "/opportunities/pipelines", version=VERSION_OPPORTUNITIES,
+            params={"locationId": self.location_id},
+        )
+        return [p for p in data.get("pipelines") or [] if isinstance(p, dict)]
 
     async def find_opportunity(self, contact_id: str, pipeline_id: str) -> str | None:
         """GET /opportunities/search. The contact's opportunity id in this pipeline, if any."""

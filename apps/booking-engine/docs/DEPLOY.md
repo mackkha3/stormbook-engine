@@ -21,39 +21,17 @@ or Redis queue). That is a code change, not a setting.
 
 ## Before the first deploy
 
-Three small changes to commit. They are listed here, not made for you.
+Fill `config/clients/<slug>.yaml` with real ids (GHL_SETUP.md step 6) and
+commit it. Ids are not secrets and belong in the repo. The token does not:
+only its env var *name* goes in `ghl_token_env`.
 
-1. **Real ids in the client config.** Fill `config/clients/<slug>.yaml` from
-   GHL_SETUP.md step 6. Ids are not secrets and belong in the repo. The token
-   does not: only its env var *name* goes in `ghl_token_env`.
-2. **`apps/booking-engine/railpack.json`**, same shape as `apps/demo-relay`:
+Already in the repo:
 
-```json
-{
-  "$schema": "https://schema.railpack.com",
-  "provider": "python",
-  "packages": {
-    "python": "3.13",
-    "uv": "0.11.30"
-  },
-  "deploy": {
-    "startCommand": "uv run --frozen --no-dev uvicorn booking_engine.main:app --host 0.0.0.0 --port $PORT --no-access-log"
-  }
-}
-```
-
-   `--no-access-log` matters: with the plain GHL Webhook action the secret is
-   in the URL, and access logs record URLs. The engine also redacts
-   `secret=...` from its own log lines as a second guard.
-3. **A Postgres driver.** The engine ships with SQLite only:
-
-```bash
-cd apps/booking-engine
-uv add "psycopg[binary]"
-uv run pytest
-```
-
-   Commit `pyproject.toml` and `uv.lock`.
+- `railpack.json`: Python 3.13, uv, and the start command. It passes
+  `--no-access-log` because with the plain GHL Webhook action the secret is in
+  the URL, and access logs record URLs. The engine also redacts `secret=...`
+  from its own log lines as a second guard.
+- The Postgres driver (`psycopg`).
 
 ## Create the service
 
@@ -69,10 +47,11 @@ SQLite on Railway is wiped on every deploy, which would forget who is booked,
 handed off or opted out. Use Postgres.
 
 1. In the project: **New → Database → PostgreSQL**.
-2. On the engine service, set `DATABASE_URL` yourself (see the table below).
-   Do **not** reference Railway's own `DATABASE_URL` directly: it starts with
-   `postgresql://`, which makes SQLAlchemy look for a driver that is not
-   installed. The engine needs the `postgresql+psycopg://` prefix.
+2. On the engine service, add the variable `DATABASE_URL` with the value
+   `${{Postgres.DATABASE_URL}}`. `Postgres` is the database service's name;
+   change it if you named yours differently. Railway's URL starts with
+   `postgresql://` (or `postgres://`); the engine switches it to its own
+   driver automatically, so use it as it is.
 3. Deploy. Tables are created on first start. There is no data to migrate
    from SQLite unless you ran real conversations locally.
 
@@ -85,16 +64,13 @@ Service → Variables. `.env.example` is the template; `.env` is never deployed.
 | `ANTHROPIC_API_KEY` | Your Anthropic key. Required |
 | `GHL_WEBHOOK_SECRET` | `openssl rand -hex 32`. Required. The same value goes in the GHL webhook URL |
 | `GHL_TOKEN_<CLIENT>` | One per client, named by that client's `ghl_token_env` (e.g. `GHL_TOKEN_ROOF_DEMO`). The Private Integration token |
-| `DATABASE_URL` | `postgresql+psycopg://${{Postgres.PGUSER}}:${{Postgres.PGPASSWORD}}@${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}` |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
 | `ENVIRONMENT` | `production` |
 | `LOG_LEVEL` | `INFO` |
 | `DEBOUNCE_SECONDS` | Leave unset (8) |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | `30`. Lets texts still inside their 8-second window be answered before the old deployment stops. Railway's default is 0 |
 | `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS` | `0`. Keeps old and new deployments from running side by side |
 | `PORT` | Injected by Railway. Do not set |
-
-`Postgres` in the reference variables is the database service's name; change
-it if you named yours differently.
 
 The server refuses to start, with a message naming the problem, if
 `ANTHROPIC_API_KEY` or `GHL_WEBHOOK_SECRET` is missing, a client config still

@@ -47,7 +47,7 @@ Never install packages globally: `uv` owns the environment.
 ## Tests
 
 ```bash
-uv run pytest               # 424 tests, no network, no API key
+uv run pytest               # 433 tests, no network, no API key
 uv run pytest -m live       # 87 more: real model vs. every fixture message (reads ANTHROPIC_API_KEY from .env, costs a few cents)
 uv run ruff check .
 ```
@@ -61,6 +61,7 @@ uv run ruff check .
 | `test_slots_and_booking.py` | Real slots only, spreading, no repeats, re-check before booking, reschedule, cancel |
 | `test_debounce_idempotency.py` | Burst of texts = one turn; duplicate message ids dropped |
 | `test_photo.py` | Picture-only texts: photo template, contact note, no slots once booked, model never asked |
+| `test_ghl_ids.py` | The ids helper (read-only, token never printed); Railway Postgres URL rewrite |
 | `test_ghl_client.py` | Every GHL path, `Version` header and body; retry rules; token never logged; GHL calendar |
 | `test_webhook.py` | The webhook end to end against a fake GHL (`tests/ghl_fake.py`): secret, payload shapes, `engine-active` gating, booking, retries, handoff and resume |
 
@@ -113,7 +114,8 @@ Debounced turns wait in memory, so run **one** server process. Deploying:
 ## Adding a roofer
 
 Copy `config/clients/roof-demo.yaml` to `config/clients/<slug>.yaml` and fill
-it in. The simulator accepts the `...` placeholders; the server
+it in. `uv run python -m booking_engine.ghl_ids --location <id>` prints the
+calendar, pipeline and stage ids to copy. The simulator accepts the `...` placeholders; the server
 (`booking_engine.main`) refuses to start until every ID is real and the token
 env var named by `ghl_token_env` is set.
 
@@ -148,6 +150,7 @@ env var named by `ghl_token_env` is set.
 | `slots.py` | Slot filtering, spreading, formatting |
 | `calendar/` | Calendar interface, mock (simulator + tests), GHL (server) |
 | `ghl_client.py` | Every GHL API call: timeouts, one retry, logging |
+| `ghl_ids.py` | Prints a sub-account's calendar, pipeline and stage ids for the client config |
 | `inbound_payload.py` | Webhook secret check, GHL payload → internal shape |
 | `webhook.py` | Inbound flow: tag gating, resume after handoff, opening text, dedupe id |
 | `engine.py` | The turn pipeline that wires the above together |
@@ -175,7 +178,7 @@ See `.env.example`. The simulator needs only `ANTHROPIC_API_KEY`.
 | Var | Required | Notes |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | yes | Message understanding |
-| `DATABASE_URL` | no | Defaults to `sqlite:///./booking_engine.db` in this folder |
+| `DATABASE_URL` | no | Defaults to `sqlite:///./booking_engine.db` in this folder. A Railway `postgres://` URL works as it is |
 | `DEBOUNCE_SECONDS` | no | Default 8 |
 | `ENVIRONMENT`, `LOG_LEVEL` | no | `development`, `INFO` |
 | `GHL_WEBHOOK_SECRET` | server | Shared secret GHL sends as `?secret=...` or in the `X-Webhook-Secret` header |
