@@ -221,6 +221,57 @@ async def test_booked_with_no_day_named_offers_reschedule_slots(h: Harness, inte
     assert h.conv.status == "booked"
 
 
+async def test_second_none_work_during_a_reschedule_asks_for_their_preference(h: Harness):
+    await h.reach("booked")                                   # booked Mon 10/5 at 11:00 AM
+    (original,) = h.calendar.appointments.values()
+    first = await h.say("can we move it", U("reschedule"))
+    first_offer = set(h.conv.current_offer)
+
+    second = await h.say("neither", U("none_work"))           # first rejection → a new pair
+    assert (first.template_key, second.template_key) == ("reschedule", "reschedule")
+    assert len(h.conv.current_offer) == 2 and not first_offer & set(h.conv.current_offer)
+
+    asked = await h.say("no those dont work either", U("none_work"))   # second in a row
+    assert asked.template_key == "ask_preference"
+    assert asked.reply == (
+        "No problem. What day and time work best for you? I'll find the closest opening."
+    )
+    conv = h.conv
+    assert conv.awaiting_preference and conv.current_offer == [] and conv.status == "booked"
+    assert original.slot == SLOT_1 and not original.cancelled    # untouched while we ask
+
+    # Their answer is a proposal whatever the model calls it — and still a reschedule.
+    proposed = await h.say("thursday afternoon", U(
+        "unclear", preferred_date=dt.date(2026, 10, 8), preferred_time_window="afternoon"))
+    assert proposed.template_key == "propose_time_match" and "Thu 10/8" in proposed.reply
+    assert proposed.booking is None and len(h.calendar.appointments) == 1
+
+    moved = await h.say("yes", U("affirm"))
+    assert moved.template_key == "booked" and moved.booking["action"] == "rescheduled"
+    assert len(h.calendar.appointments) == 1                  # one appointment, moved
+    (appointment,) = live_appointments(h)
+    assert appointment.id == original.id and appointment.slot.date() == dt.date(2026, 10, 8)
+    assert appointment.slot.hour >= 12 and await h.calendar.is_free(SLOT_1)
+
+
+async def test_none_work_streak_during_a_reschedule_resets_on_other_messages(h: Harness):
+    await h.reach("booked")
+    await h.say("can we move it", U("reschedule"))
+    assert (await h.say("neither", U("none_work"))).template_key == "reschedule"
+    assert (await h.say("how long does it take", U("deferrable_question"))).template_key == "deflect"
+    # Not two in a row any more, so this is a first rejection again.
+    assert (await h.say("neither", U("none_work"))).template_key == "reschedule"
+    assert len(h.calendar.appointments) == 1
+
+
+async def test_booked_none_work_with_nothing_offered_is_not_counted_as_a_rejection(h: Harness):
+    await h.reach("booked")
+    opened = await h.say("that time wont work anymore", U("none_work"))
+    assert opened.template_key == "reschedule" and h.conv.none_work_streak == 0
+    assert (await h.say("neither", U("none_work"))).template_key == "reschedule"
+    assert (await h.say("nope", U("none_work"))).template_key == "ask_preference"
+
+
 async def test_none_work_during_a_reschedule_offers_other_times_and_still_moves(h: Harness):
     await h.reach("booked")
     first = await h.say("can we move it", U("reschedule"))

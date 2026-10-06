@@ -95,9 +95,13 @@ async def _decide(t: Turn) -> Decision:
         )
         if not answers_offer:
             if intent in RESCHEDULE_WHEN_BOOKED and (intent != "affirm" or t.has_preference):
-                return await (
-                    _propose(t) if t.has_preference else _offer(t, "reschedule", fresh=True)
-                )
+                if t.has_preference:
+                    return await _propose(t)
+                # Turning down offered reschedule times follows the first-booking rule:
+                # a new pair once, then ask for their own day and time.
+                if intent == "none_work" and conv.current_offer and _second_none_work(t):
+                    return _ask_preference(t)
+                return await _offer(t, "reschedule", fresh=True)
             if intent == "affirm":
                 return Decision()    # "ok thanks" after the confirmation needs no reply
             if not conv.current_offer:
@@ -118,11 +122,8 @@ async def _decide(t: Turn) -> Decision:
     if intent == "reschedule" and t.has_preference:
         return await _propose(t)
     if intent in ("none_work", "reschedule"):
-        conv.none_work_streak = t.prev_none_work + 1
-        if conv.none_work_streak >= 2:
-            conv.current_offer = []
-            conv.awaiting_preference = True
-            return Decision(template_key="ask_preference")
+        if _second_none_work(t):
+            return _ask_preference(t)
         return await _offer(t, "offer_more_slots", fresh=True)
     if intent == "deferrable_question":
         return await _offer(t, "deflect")
@@ -133,6 +134,19 @@ async def _decide(t: Turn) -> Decision:
     if intent == "is_bot":
         return await _offer(t, "is_bot")
     return await _unclear(t)
+
+
+def _second_none_work(t: Turn) -> bool:
+    """Count this rejection; True once it is the second in a row."""
+    t.conv.none_work_streak = t.prev_none_work + 1
+    return t.conv.none_work_streak >= 2
+
+
+def _ask_preference(t: Turn) -> Decision:
+    """Stop guessing: ask for their own day and time. The answer is treated as a proposal."""
+    t.conv.current_offer = []
+    t.conv.awaiting_preference = True
+    return Decision(template_key="ask_preference")
 
 
 async def _unclear(t: Turn) -> Decision:
