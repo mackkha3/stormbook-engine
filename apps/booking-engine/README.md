@@ -9,9 +9,10 @@ No booking links, no "call us back."
 > homeowner sees is rendered from `config/templates.yaml`, and a code-level
 > safety check re-verifies that before each send.
 
-**Status: Phase 1** (core engine, no GHL). The engine runs end to end against
-a mock calendar and an in-memory CRM. The GHL webhook, real calendar and real
-SMS arrive in Phase 2; deployment docs in Phase 3.
+**Status: Phase 2** (GHL integration). The server takes GHL's inbound webhook,
+reads free slots from the roofer's GHL calendar, books there, and sends the
+reply, tags, notes and stage moves through the GHL API. Nothing is deployed;
+deployment docs are Phase 3. GHL-side setup: [docs/GHL_SETUP.md](docs/GHL_SETUP.md).
 
 ## Try it: the terminal simulator
 
@@ -45,7 +46,7 @@ Never install packages globally: `uv` owns the environment.
 ## Tests
 
 ```bash
-uv run pytest               # 365 tests, no network, no API key
+uv run pytest               # 410 tests, no network, no API key
 uv run pytest -m live       # 87 more: real model vs. every fixture message (reads ANTHROPIC_API_KEY from .env, costs a few cents)
 uv run ruff check .
 ```
@@ -58,6 +59,8 @@ uv run ruff check .
 | `test_safety.py` | Output safety check: template-only, no dollar amounts, banned phrases, calendar-only times |
 | `test_slots_and_booking.py` | Real slots only, spreading, no repeats, re-check before booking, reschedule, cancel |
 | `test_debounce_idempotency.py` | Burst of texts = one turn; duplicate message ids dropped |
+| `test_ghl_client.py` | Every GHL path, `Version` header and body; retry rules; token never logged; GHL calendar |
+| `test_webhook.py` | The webhook end to end against a fake GHL (`tests/ghl_fake.py`): secret, payload shapes, `engine-active` gating, booking, retries, handoff and resume |
 
 ## Editing what homeowners see
 
@@ -77,13 +80,27 @@ answering. A new conversation's history is seeded with that text. **Keep
 these in sync with the wording in GHL.** `opening_web_form` is still a
 placeholder (marked TODO in the file).
 
-## Phase 2 notes
+## Running the server
 
-- **Opening text:** once GHL is connected, the webhook must fetch the actual
-  last outbound message from the GHL conversation and pass it as
-  `Contact.opening_text`; the engine already prefers it and falls back to the
-  configured `opening_<lead_source>` text. The webhook must also set
-  `Contact.lead_source` (`missed_call` or `web_form`).
+```bash
+uv run uvicorn booking_engine.main:app --port 8000
+```
+
+It refuses to start until `ANTHROPIC_API_KEY` and `GHL_WEBHOOK_SECRET` are
+set, every client config is free of placeholders, and each client's token env
+var is set. Routes: `GET /health` and `POST /webhooks/ghl/inbound`.
+
+What the webhook does with a homeowner's reply:
+
+1. Rejects it without the right `X-Webhook-Secret` header.
+2. Finds the client by GHL location id and reads the contact from GHL.
+   No `engine-active` tag: ignored. Tag back on a handed-off contact: the
+   engine resumes.
+3. On a first reply, reads the opening text GHL actually sent and moves the
+   opportunity to `replied`.
+4. Queues the message; the reply goes out after the debounce window.
+
+Debounced turns wait in memory, so run **one** server process.
 
 ## Adding a roofer
 
@@ -113,7 +130,7 @@ env var named by `ghl_token_env` is set.
 
 | Module | Responsibility |
 |---|---|
-| `main.py` | FastAPI app + routes (Phase 1: `/health`) |
+| `main.py` | FastAPI app + routes (`/health`, `/webhooks/ghl/inbound`) |
 | `settings.py` | Env var loading |
 | `config_loader.py` | Client config loading + validation |
 | `db.py`, `models.py`, `store.py` | Database setup, tables, state read/write |
@@ -121,11 +138,14 @@ env var named by `ghl_token_env` is set.
 | `conversation.py` | Intent → action (the state machine) |
 | `templates.py` | Template rendering + output safety check |
 | `slots.py` | Slot filtering, spreading, formatting |
-| `calendar/` | Calendar interface, mock (Phase 1), GHL (Phase 2) |
+| `calendar/` | Calendar interface, mock (simulator + tests), GHL (server) |
+| `ghl_client.py` | Every GHL API call: timeouts, one retry, logging |
+| `inbound_payload.py` | Webhook secret check, GHL payload → internal shape |
+| `webhook.py` | Inbound flow: tag gating, resume after handoff, opening text, dedupe id |
 | `engine.py` | The turn pipeline that wires the above together |
 | `turn.py` | Value types for one turn (inbound message, decision, result) |
 | `debounce.py` | Collects a burst of texts into one turn |
-| `gateway.py` | CRM actions interface (SMS, tags, notes, stage) + in-memory recorder |
+| `gateway.py` | CRM actions interface (SMS, tags, notes, stage): in-memory recorder + GHL |
 | `logger.py` | Structured JSON logs (same as demo-relay) |
 | `simulate.py` | Terminal simulator |
 
@@ -142,7 +162,7 @@ env var named by `ghl_token_env` is set.
 
 ## Environment variables
 
-See `.env.example`. Phase 1 needs only `ANTHROPIC_API_KEY`.
+See `.env.example`. The simulator needs only `ANTHROPIC_API_KEY`.
 
 | Var | Required | Notes |
 |---|---|---|
@@ -150,4 +170,5 @@ See `.env.example`. Phase 1 needs only `ANTHROPIC_API_KEY`.
 | `DATABASE_URL` | no | Defaults to `sqlite:///./booking_engine.db` in this folder |
 | `DEBOUNCE_SECONDS` | no | Default 8 |
 | `ENVIRONMENT`, `LOG_LEVEL` | no | `development`, `INFO` |
-| `GHL_WEBHOOK_SECRET`, `GHL_TOKEN_ROOF_DEMO` | Phase 2 | Unused in Phase 1 |
+| `GHL_WEBHOOK_SECRET` | server | Shared secret GHL sends in the `X-Webhook-Secret` header |
+| `GHL_TOKEN_ROOF_DEMO` | server | Private Integration token; one env var per client, named by `ghl_token_env` |

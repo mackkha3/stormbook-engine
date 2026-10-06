@@ -115,8 +115,19 @@ class Engine:
             log.exception("turn_failed", extra={"contact_id": contact.contact_id})
             conv.status, conv.handoff_reason = HANDOFF, f"internal_error: {type(exc).__name__}"
             result.handoff_reason = conv.handoff_reason
+            await self._flag_failure(conv, text)
         self._record(conv, result, [m.message_id for m in messages])
         return result
+
+    async def _flag_failure(self, conv: Conversation, text: str) -> None:
+        """Best effort: a turn that blew up must still reach a human through the CRM."""
+        note = f"Booking engine handoff. Reason: {conv.handoff_reason}\n\nhomeowner: {text}"
+        try:
+            await self.gateway.add_tags(conv.contact_id, [gw.TAG_HANDOFF])
+            await self.gateway.remove_tags(conv.contact_id, [gw.TAG_ACTIVE])
+            await self.gateway.add_note(conv.contact_id, note)
+        except Exception:
+            log.exception("failure_handoff_not_recorded", extra={"contact_id": conv.contact_id})
 
     def open_conversation(self, contact: Contact) -> Conversation:
         """Load the contact's conversation, creating it on their first reply.

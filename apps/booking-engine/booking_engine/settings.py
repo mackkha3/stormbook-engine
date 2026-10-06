@@ -33,7 +33,20 @@ class Settings:
             ghl_webhook_secret=os.environ.get("GHL_WEBHOOK_SECRET", "").strip(),
         )
 
+    def missing_for_server(self) -> list[str]:
+        """Env vars the webhook server cannot run without and that are not set."""
+        required = {
+            "ANTHROPIC_API_KEY": self.anthropic_api_key,
+            "GHL_WEBHOOK_SECRET": self.ghl_webhook_secret,
+        }
+        return [name for name, value in required.items() if not value]
+
 
 def env_is_set(name: str) -> bool:
     """True if the named env var holds a non-empty value. Never returns the value."""
     return bool(os.environ.get(name, "").strip())
+
+
+def secret_from_env(name: str) -> str:
+    """The value of a secret env var (a client's GHL token). Never log the result."""
+    return os.environ.get(name, "").strip()

@@ -1,9 +1,8 @@
 """Everything the engine does to the CRM: send the SMS, tags, notes, pipeline stage.
 
-Phase 1 ships only the in-memory `RecordingGateway` (simulator + tests).
-Phase 2's ghl_client implements the same interface against the GHL API.
-`send_sms` takes a RenderedMessage, never a bare string, so only template
-output can be sent.
+`RecordingGateway` keeps the calls in memory (simulator + tests); `GhlGateway`
+makes them for real through ghl_client. `send_sms` takes a RenderedMessage,
+never a bare string, so only template output can be sent.
 """
 
 from __future__ import annotations
@@ -11,7 +10,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any
 
+from booking_engine.config_loader import ClientConfig
+from booking_engine.ghl_client import GhlClient, GhlError
+from booking_engine.logger import get
 from booking_engine.templates import RenderedMessage
+
+log = get(__name__)
 
 TAG_ACTIVE = "engine-active"
 TAG_HANDOFF = "engine-handoff"
@@ -72,3 +76,51 @@ class RecordingGateway(CrmGateway):
 
     async def set_stage(self, contact_id: str, stage: str) -> None:
         self.calls.append({"call": "set_stage", "contact_id": contact_id, "stage": stage})
+
+
+class GhlGateway(CrmGateway):
+    """The real thing: one client's GHL sub-account."""
+
+    def __init__(self, ghl: GhlClient, client: ClientConfig) -> None:
+        self._ghl = ghl
+        self._client = client
+
+    async def send_sms(self, contact_id: str, message: RenderedMessage) -> None:
+        if not isinstance(message, RenderedMessage):
+            raise TypeError("send_sms only accepts template-rendered messages")
+        await self._ghl.send_sms(contact_id, message.text)
+
+    async def add_tags(self, contact_id: str, tags: list[str]) -> None:
+        await self._ghl.add_tags(contact_id, tags)
+
+    async def remove_tags(self, contact_id: str, tags: list[str]) -> None:
+        await self._ghl.remove_tags(contact_id, tags)
+
+    async def add_note(self, contact_id: str, body: str) -> None:
+        await self._ghl.add_note(contact_id, body)
+
+    async def set_stage(self, contact_id: str, stage: str) -> None:
+        """Move the contact's opportunity in the client's pipeline.
+
+        The pipeline board is bookkeeping: a missing opportunity or a failed move is
+        logged and skipped, never allowed to derail a turn that already texted the
+        homeowner.
+        """
+        pipeline_id = self._client.pipeline_id
+        stage_id = getattr(self._client.stage_ids, stage)
+        try:
+            opportunity_id = await self._ghl.find_opportunity(contact_id, pipeline_id)
+            if opportunity_id is None:
+                log.warning(
+                    "no_opportunity_for_contact",
+                    extra={"contact_id": contact_id, "pipeline_id": pipeline_id, "stage": stage},
+                )
+                return
+            await self._ghl.update_opportunity_stage(
+                opportunity_id, pipeline_id=pipeline_id, stage_id=stage_id
+            )
+        except GhlError as exc:
+            log.error(
+                "stage_move_failed",
+                extra={"contact_id": contact_id, "stage": stage, "error": str(exc)},
+            )
