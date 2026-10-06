@@ -206,6 +206,10 @@ False if they want anything, including "yes" to scheduling or rebooking.
 and texting shorthand in English are still "en".
 - notes: a short internal reason for your choice.
 
+In recent_messages, "engine" lines are the company's side of the conversation. The \
+first one is usually the opening text that started it; a first reply such as "yes \
+please, that would be great" is answering that text, so read it against what was asked.
+
 Messages are often messy ("ya", "tmrw aft 3??", "who dis"). If the turn contains \
 several texts sent in a row, classify them together as one message."""
 

@@ -78,8 +78,9 @@ async def test_webhook_retry_after_the_reply_does_not_send_a_second_reply():
 
     assert not h.engine.receive(h.contact, h.message("yes", message_id="ghl-123"))
     await h.engine.debouncer.drain()
-    assert len(h.gateway.sent) == 1 and len(h.store.turns(h.conv.id)) == 1
-    assert h.store.turns(h.conv.id)[0].inbound_message_ids == ["ghl-123"]
+    homeowner_turns = [t for t in h.store.turns(h.conv.id) if t.inbound_text]
+    assert len(h.gateway.sent) == 1 and len(homeowner_turns) == 1
+    assert homeowner_turns[0].inbound_message_ids == ["ghl-123"]
 
 
 async def test_dedupe_survives_a_restart():

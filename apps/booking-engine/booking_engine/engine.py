@@ -16,7 +16,12 @@ from typing import Any
 from booking_engine import gateway as gw
 from booking_engine.calendar.base import Calendar
 from booking_engine.config_loader import ClientConfig, ConfigError
-from booking_engine.conversation import REQUIRED_TEMPLATES, decide
+from booking_engine.conversation import (
+    DEFAULT_LEAD_SOURCE,
+    LEAD_SOURCES,
+    REQUIRED_TEMPLATES,
+    decide,
+)
 from booking_engine.debounce import Debouncer
 from booking_engine.logger import get
 from booking_engine.models import BOOKED, HANDOFF, OPTED_OUT, STOPPED, Conversation
@@ -99,9 +104,7 @@ class Engine:
 
     async def handle_turn(self, contact: Contact, messages: list[InboundMessage]) -> TurnResult:
         """Process one debounced turn. Sends at most one reply."""
-        conv = self.store.get_or_create(
-            self.client.client_slug, contact.contact_id, contact.phone, contact.name
-        )
+        conv = self.open_conversation(contact)
         bodies = [m.body.strip() for m in messages if m.body.strip()]
         text = "\n".join(bodies)
         result = TurnResult(inbound_text=text, status=conv.status)
@@ -114,6 +117,43 @@ class Engine:
             result.handoff_reason = conv.handoff_reason
         self._record(conv, result, [m.message_id for m in messages])
         return result
+
+    def open_conversation(self, contact: Contact) -> Conversation:
+        """Load the contact's conversation, creating it on their first reply.
+
+        The first inbound is always an answer to GHL's opening text, which the engine
+        never sent. A new conversation's history is therefore seeded with that text as
+        the first business-side message, so the model knows what is being answered.
+        """
+        conv, created = self.store.get_or_create(
+            self.client.client_slug, contact.contact_id, contact.phone, contact.name
+        )
+        if created:
+            key, text = self.opening_message(contact)
+            self.store.add_turn(
+                conv.id, inbound_text="", inbound_message_ids=[], template_key=key,
+                outbound_text=text, status_after=conv.status,
+            )
+            log.info(
+                "conversation_opened",
+                extra={"client": self.client.client_slug, "contact_id": contact.contact_id,
+                       "lead_source": contact.lead_source, "opening": key, "opening_text": text},
+            )
+        return conv
+
+    def opening_message(self, contact: Contact) -> tuple[str, str]:
+        """(source key, text) of the opening message this contact was sent.
+
+        Phase 2: the webhook passes the real last outbound message from the GHL
+        conversation as `contact.opening_text`; the configured text is the fallback.
+        """
+        if contact.opening_text and contact.opening_text.strip():
+            return "opening_from_ghl", contact.opening_text.strip()
+        source = contact.lead_source if contact.lead_source in LEAD_SOURCES else DEFAULT_LEAD_SOURCE
+        if source != contact.lead_source:
+            log.warning("unknown_lead_source", extra={"lead_source": contact.lead_source})
+        key = f"opening_{source}"
+        return key, self.templates.render(key, {"company_name": self.client.company_name}).text
 
     async def _run(
         self, conv: Conversation, bodies: list[str], text: str, result: TurnResult

@@ -19,6 +19,11 @@ class Contact:
     contact_id: str
     phone: str
     name: str | None = None
+    # Which GHL workflow sent the opening text this homeowner is replying to.
+    lead_source: str = "missed_call"
+    # Phase 2: the actual last outbound message from the GHL conversation. When set it
+    # is used instead of the configured opening text for `lead_source`.
+    opening_text: str | None = None
 
 
 @dataclass(frozen=True)

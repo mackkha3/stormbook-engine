@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 
 from booking_engine.calendar.mock import MockCalendar
 from booking_engine.config_loader import ClientConfig, ConfigError, load_client
+from booking_engine.conversation import DEFAULT_LEAD_SOURCE, LEAD_SOURCES
 from booking_engine.db import init_db, make_engine
 from booking_engine.engine import Contact, Engine, InboundMessage, TurnResult
 from booking_engine.gateway import RecordingGateway
@@ -104,14 +105,21 @@ async def _session(
     )
 
     def new_contact() -> Contact:
-        return Contact(contact_id=f"sim-{uuid.uuid4().hex[:8]}", phone="+19035550199")
+        contact = Contact(
+            contact_id=f"sim-{uuid.uuid4().hex[:8]}", phone="+19035550199",
+            lead_source=args.lead_source,
+        )
+        # Like production: the conversation starts with the opening text GHL sent.
+        engine.open_conversation(contact)
+        print(f"\nGHL ({args.lead_source} opening): {engine.opening_message(contact)[1]}\n")
+        return contact
 
-    contact = new_contact()
     print(f"Stormbook booking engine simulator. Client: {client.company_name} ({client.timezone})")
     if client.placeholder_fields():
         print("Note: this client config still has GHL placeholders. Fine for the simulator.")
-    print("You are the homeowner. GHL has already sent the first text; type your reply.")
-    print(HELP + "\n")
+    print("You are the homeowner. GHL has already sent the opening text below; type your reply.")
+    print(HELP)
+    contact = new_contact()
 
     while True:
         try:
@@ -127,8 +135,8 @@ async def _session(
             print(HELP)
         elif line == "/new":
             await engine.debouncer.drain()
-            contact = new_contact()
             print("  [new homeowner, fresh conversation]")
+            contact = new_contact()
         elif line == "/state":
             if conv is None:
                 print("  [no conversation yet]")
@@ -162,15 +170,23 @@ async def _session(
     await engine.debouncer.drain()
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Text the booking engine like a homeowner.")
     parser.add_argument("--client", default="roof-demo", help="client slug in config/clients/")
     parser.add_argument(
         "--debounce", type=float, default=0.0,
         help="seconds to wait for more texts before replying (production uses 8; default 0)",
     )
+    parser.add_argument(
+        "--lead-source", choices=LEAD_SOURCES, default=DEFAULT_LEAD_SOURCE,
+        help="which GHL opening text the homeowner is replying to (default missed_call)",
+    )
     parser.add_argument("--verbose", action="store_true", help="also print the JSON turn logs")
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
     configure_logging()
     if not args.verbose:
         logging.getLogger().setLevel(logging.ERROR)

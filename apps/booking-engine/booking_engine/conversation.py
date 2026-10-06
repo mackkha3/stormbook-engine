@@ -27,6 +27,11 @@ REQUIRED_TEMPLATES = {
     "which_one", "clarify", "reschedule", "cancelled", "handoff", "emergency", "not_interested",
     "no_slots_available",
 }
+# Opening texts GHL sends, one per lead source (templates.yaml: opening_<lead_source>).
+# Never sent by the engine; used to seed a new conversation's history.
+LEAD_SOURCES = ("missed_call", "web_form")
+DEFAULT_LEAD_SOURCE = "missed_call"
+REQUIRED_TEMPLATES |= {f"opening_{source}" for source in LEAD_SOURCES}
 
 REOPEN_INTENTS = ("affirm", "propose_time", "pick_slot", "none_work")
 RESCHEDULE_WHEN_BOOKED = ("reschedule", "propose_time", "pick_slot", "none_work", "affirm")

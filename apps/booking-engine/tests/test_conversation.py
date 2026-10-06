@@ -6,8 +6,9 @@ import datetime as dt
 
 import pytest
 
+from booking_engine.engine import Contact
 from booking_engine.gateway import TAG_ACTIVE, TAG_EMERGENCY, TAG_HANDOFF
-from booking_engine.understanding import UnderstandingError
+from booking_engine.understanding import UnderstandingError, build_user_content
 from tests.conftest import FIXTURES, Harness, U
 
 
@@ -171,7 +172,8 @@ async def test_questions_after_booking_go_to_a_human(h: Harness):
 async def test_every_turn_is_stored_for_review(h: Harness):
     await h.say("yes", U("affirm"))
     await h.say("1", U("pick_slot", slot_choice=1))
-    first, second = h.store.turns(h.conv.id)
+    opening, first, second = h.store.turns(h.conv.id)
+    assert (opening.template_key, opening.inbound_text) == ("opening_missed_call", "")
     assert (first.inbound_text, first.intent, first.template_key) == ("yes", "affirm", "offer_slots")
     assert first.model_output["confidence"] == 0.95 and first.outbound_text.startswith("Great!")
     assert second.booking_result["action"] == "booked" and second.status_after == "booked"
@@ -467,3 +469,130 @@ async def test_named_day_during_a_reschedule_is_still_a_reschedule(h: Harness):
 async def test_low_confidence_still_wins_over_a_named_day(h: Harness):
     result = await h.say("mumble sunday?", U("none_work", confidence=0.4, preferred_date=SUNDAY))
     assert (result.intent, result.template_key) == ("unclear", "clarify")
+
+
+# --- opening message: the model must know what a first reply is answering ------
+
+MISSED_CALL_OPENING = (
+    "Hi, this is Roof Demo. Sorry we missed your call! Is this about a roof inspection? "
+    "Reply YES and we'll get you on the schedule. Reply STOP to opt out."
+)
+
+
+async def test_fresh_yes_please_reaches_the_model_with_the_opening_text_and_is_an_affirm(h: Harness):
+    """The live miss: with no context, "Yes please, that would be great" read as unclear."""
+    result = await h.say("Yes please, that would be great", U("affirm"))
+    ctx = h.understander.contexts[0]
+    assert ctx.history == [{"role": "engine", "text": MISSED_CALL_OPENING}]
+    content = build_user_content(ctx)
+    assert f"engine: {MISSED_CALL_OPENING}" in content and "(no earlier messages)" not in content
+    assert content.index(MISSED_CALL_OPENING) < content.index("Yes please, that would be great")
+    assert (result.intent, result.template_key) == ("affirm", "offer_slots")
+
+
+async def test_opening_is_seeded_once_and_never_sent_or_counted(h: Harness):
+    await h.say("yes", U("affirm"))
+    await h.say("how much", U("deferrable_question"))
+    turns = h.store.turns(h.conv.id)
+    assert [t.template_key for t in turns] == ["opening_missed_call", "offer_slots", "deflect"]
+    assert turns[0].outbound_text == MISSED_CALL_OPENING and turns[0].inbound_text == ""
+    assert MISSED_CALL_OPENING not in h.sent and len(h.sent) == 2     # the engine never sends it
+    assert h.conv.engine_message_count == 2
+    # It stays the first business-side message in what the model sees next turn.
+    await h.say("1", U("pick_slot", slot_choice=1))
+    history = h.understander.contexts[-1].history
+    assert history[0] == {"role": "engine", "text": MISSED_CALL_OPENING}
+    assert [m["role"] for m in history] == ["engine", "homeowner", "engine", "homeowner", "engine"]
+
+
+async def test_web_form_lead_gets_the_web_form_opening(h: Harness):
+    h.contact = Contact(contact_id="web-1", phone="+19035550123", lead_source="web_form")
+    await h.say("yes", U("affirm"))
+    (opening,) = h.understander.contexts[0].history
+    assert opening["text"] == h.templates.render(
+        "opening_web_form", {"company_name": "Roof Demo"}).text
+    assert opening["text"] != MISSED_CALL_OPENING
+    assert h.store.turns(h.conv.id)[0].template_key == "opening_web_form"
+
+
+async def test_unknown_lead_source_falls_back_to_missed_call(h: Harness):
+    h.contact = Contact(contact_id="odd-1", phone="+19035550123", lead_source="billboard")
+    await h.say("yes", U("affirm"))
+    assert h.understander.contexts[0].history == [{"role": "engine", "text": MISSED_CALL_OPENING}]
+
+
+async def test_actual_ghl_message_wins_over_the_configured_opening(h: Harness):
+    """Phase 2 hook: the webhook will pass the real last outbound text from GHL."""
+    actual = "Hey Jane, Mike with Roof Demo here. Still need that roof looked at? Reply YES."
+    h.contact = Contact(contact_id="ghl-1", phone="+19035550123", opening_text=f"  {actual} ")
+    await h.say("yes", U("affirm"))
+    assert h.understander.contexts[0].history == [{"role": "engine", "text": actual}]
+    assert h.store.turns(h.conv.id)[0].template_key == "opening_from_ghl"
+
+
+async def test_opening_appears_in_an_early_handoff_note(h: Harness):
+    await h.say("can someone call me", U("human_request"))
+    lines = h.gateway.notes()[0].split("\n\n", 1)[1].splitlines()
+    assert lines[0] == f"engine: {MISSED_CALL_OPENING}" and lines[1] == "homeowner: can someone call me"
+
+
+async def test_stop_as_the_first_reply_still_opts_out(h: Harness):
+    result = await h.say("STOP")
+    assert result.reply is None and h.conv.status == "opted_out"
+    assert [t.template_key for t in h.store.turns(h.conv.id)] == ["opening_missed_call", None]
+
+
+def test_opening_templates_are_required_and_configured():
+    from booking_engine.conversation import LEAD_SOURCES, REQUIRED_TEMPLATES
+    from booking_engine.templates import TemplateError, Templates
+
+    assert LEAD_SOURCES == ("missed_call", "web_form")
+    assert {"opening_missed_call", "opening_web_form"} <= REQUIRED_TEMPLATES
+    templates = Templates.load()
+    assert templates.render("opening_missed_call", {"company_name": "Roof Demo"}).text == (
+        MISSED_CALL_OPENING)
+    with pytest.raises(TemplateError, match="opening_web_form"):
+        Templates({"opening_missed_call": "Hi from {company_name}"}).require(REQUIRED_TEMPLATES)
+
+
+@pytest.mark.parametrize(
+    "argv, source, opening_starts",
+    [
+        ([], "missed_call", "Hi, this is Roof Demo. Sorry we missed your call!"),
+        (["--lead-source", "web_form"], "web_form", "Hi, this is Roof Demo. Thanks for requesting"),
+    ],
+)
+async def test_simulator_seeds_and_shows_the_opening_text(
+    monkeypatch, capsys, argv, source, opening_starts
+):
+    from booking_engine import simulate
+    from booking_engine.understanding import AnthropicUnderstander
+
+    seen: list = []
+
+    class Scripted(AnthropicUnderstander):
+        async def understand(self, ctx):
+            seen.append(ctx)
+            return U("affirm")
+
+    lines = iter(["Yes please, that would be great", "/quit"])
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-used")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setattr(simulate, "AnthropicUnderstander", Scripted)
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(lines))
+    args = simulate.build_parser().parse_args(argv)
+    assert args.lead_source == source
+    assert await simulate.run(args) == 0
+
+    out = capsys.readouterr().out
+    assert f"GHL ({source} opening): {opening_starts}" in out
+    (ctx,) = seen
+    assert len(ctx.history) == 1 and ctx.history[0]["text"].startswith(opening_starts)
+    assert "[template: offer_slots]" in out
+
+
+def test_simulator_rejects_an_unknown_lead_source():
+    from booking_engine import simulate
+
+    with pytest.raises(SystemExit):
+        simulate.build_parser().parse_args(["--lead-source", "billboard"])

@@ -22,7 +22,8 @@ uv sync
 uv run python -m booking_engine.simulate --client roof-demo
 ```
 
-You are the homeowner. GHL's first text is assumed already sent, so start
+You are the homeowner. The simulator shows the opening text GHL would have
+sent and seeds the conversation with it, exactly like production, so start
 with your reply (`yes`, `how much is this`, `can u do sat morning`, `STOP`).
 After each text you see the intent the model read, the template used, the
 reply, any calendar booking, CRM actions (tags, notes, stage) and handoffs.
@@ -35,7 +36,8 @@ reply, any calendar booking, CRM actions (tags, notes, stage) and handoffs.
 | `/new` | Start over as a new homeowner |
 | `/quit` | Exit |
 
-Flags: `--debounce 8` waits 8 seconds for follow-up texts like production does
+Flags: `--lead-source web_form` replies to the web-form opening text instead
+of the missed-call one (default `missed_call`); `--debounce 8` waits 8 seconds for follow-up texts like production does
 (default 0, so replies are instant); `--verbose` also prints the JSON turn logs.
 
 Never install packages globally: `uv` owns the environment.
@@ -43,7 +45,7 @@ Never install packages globally: `uv` owns the environment.
 ## Tests
 
 ```bash
-uv run pytest               # 354 tests, no network, no API key
+uv run pytest               # 365 tests, no network, no API key
 uv run pytest -m live       # 87 more: real model vs. every fixture message (reads ANTHROPIC_API_KEY from .env, costs a few cents)
 uv run ruff check .
 ```
@@ -65,6 +67,23 @@ changes. Templates may only use `{company_name}`, `{slot_1}`, `{slot_2}`,
 dollar amount, a banned phrase (`deductible`, `guarantee`, `insurance will`,
 `covered by insurance`, `free roof`, `waive`) or a hardcoded day/time is
 rejected at startup.
+
+### Opening messages
+
+The first text of every conversation is sent by a GHL workflow, not by the
+engine. `templates.yaml` holds a copy per lead source (`opening_missed_call`,
+`opening_web_form`) so the model knows what a homeowner's first reply is
+answering. A new conversation's history is seeded with that text. **Keep
+these in sync with the wording in GHL.** `opening_web_form` is still a
+placeholder (marked TODO in the file).
+
+## Phase 2 notes
+
+- **Opening text:** once GHL is connected, the webhook must fetch the actual
+  last outbound message from the GHL conversation and pass it as
+  `Contact.opening_text`; the engine already prefers it and falls back to the
+  configured `opening_<lead_source>` text. The webhook must also set
+  `Contact.lead_source` (`missed_call` or `web_form`).
 
 ## Adding a roofer
 

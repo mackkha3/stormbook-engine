@@ -27,3 +27,12 @@ handoff: "Thanks! Someone from {company_name} will follow up with you shortly."
 emergency: "If water is coming in right now, please call {company_phone} so we can help immediately. I'm alerting the team now."
 not_interested: "Understood, thanks for letting us know. If you ever need us, just text here."
 no_slots_available: "Thanks! Someone from {company_name} will reach out shortly to find a time that works."
+
+# --- Opening messages (sent by GHL, NOT by the engine) -------------------------
+# The first text of every conversation is sent by a GHL workflow, one per lead
+# source. The engine never sends these. They are copied here so the AI knows
+# what the homeowner's first reply is answering ("Yes please" = yes to what?).
+# KEEP THESE IN SYNC with the wording in the GHL workflows.
+opening_missed_call: "Hi, this is {company_name}. Sorry we missed your call! Is this about a roof inspection? Reply YES and we'll get you on the schedule. Reply STOP to opt out."
+# TODO(founder): placeholder only. Replace with the exact web-form opening text from GHL.
+opening_web_form: "Hi, this is {company_name}. Thanks for requesting a roof inspection! Reply YES and we'll get you on the schedule. Reply STOP to opt out."

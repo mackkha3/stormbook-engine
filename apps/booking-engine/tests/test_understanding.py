@@ -273,16 +273,17 @@ async def test_live_model_classifies_fixture(fixture):
         pytest.skip("caught by the code opt-out rule; the model is never asked")
     h = Harness()
     await h.reach(fixture["state"])
-    conv, tz = h.conv, h.client.tz
+    # Same as production: even a brand-new conversation starts with GHL's opening text.
+    conv, tz = h.engine.open_conversation(h.contact), h.client.tz
     ctx = TurnContext(
-        message=fixture["text"], now=NOW, status=conv.status if conv else "active",
-        offered=[dt.datetime.fromisoformat(k).astimezone(tz) for k in (conv.current_offer if conv else [])],
+        message=fixture["text"], now=NOW, status=conv.status,
+        offered=[dt.datetime.fromisoformat(k).astimezone(tz) for k in conv.current_offer],
         booked_time=(
             dt.datetime.fromisoformat(conv.booked_time).astimezone(tz)
-            if conv and conv.booked_time else None
+            if conv.booked_time else None
         ),
-        awaiting_preference=bool(conv and conv.awaiting_preference),
-        history=h.store.recent_messages(conv.id) if conv else [],
+        awaiting_preference=conv.awaiting_preference,
+        history=h.store.recent_messages(conv.id),
     )
     # Opened and closed inside this test's own event loop.
     async with AnthropicUnderstander(api_key) as understander:
@@ -379,8 +380,6 @@ async def test_understander_does_not_close_a_client_it_was_given():
 
 
 async def test_simulator_closes_its_client_before_the_loop_ends(monkeypatch):
-    import argparse
-
     from booking_engine import simulate
 
     created: list[AnthropicUnderstander] = []
@@ -394,7 +393,7 @@ async def test_simulator_closes_its_client_before_the_loop_ends(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
     monkeypatch.setattr(simulate, "AnthropicUnderstander", Tracking)
     monkeypatch.setattr("builtins.input", lambda _prompt: "/quit")
-    args = argparse.Namespace(client="roof-demo", debounce=0.0, verbose=False)
+    args = simulate.build_parser().parse_args([])
     assert await simulate.run(args) == 0
     assert len(created) == 1 and created[0]._client.is_closed()
 

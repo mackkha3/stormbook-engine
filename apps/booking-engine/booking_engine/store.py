@@ -36,10 +36,11 @@ class Store:
 
     def get_or_create(
         self, client_slug: str, contact_id: str, phone: str, name: str | None
-    ) -> Conversation:
+    ) -> tuple[Conversation, bool]:
+        """Return (conversation, created)."""
         existing = self.get_conversation(client_slug, contact_id)
         if existing is not None:
-            return existing
+            return existing, False
         with self._sessions() as session:
             conversation = Conversation(
                 client_slug=client_slug,
@@ -51,7 +52,7 @@ class Store:
             )
             session.add(conversation)
             session.commit()
-            return conversation
+            return conversation, True
 
     def save(self, conversation: Conversation) -> Conversation:
         with self._sessions() as session:
@@ -85,7 +86,8 @@ class Store:
             ).all()
         messages: list[dict[str, str]] = []
         for turn in reversed(recent):
-            messages.append({"role": "homeowner", "text": turn.inbound_text})
+            if turn.inbound_text:      # the opening-message row has no homeowner text
+                messages.append({"role": "homeowner", "text": turn.inbound_text})
             if turn.outbound_text:
                 messages.append({"role": "engine", "text": turn.outbound_text})
         return messages[-limit:]
