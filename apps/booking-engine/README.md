@@ -9,10 +9,11 @@ No booking links, no "call us back."
 > homeowner sees is rendered from `config/templates.yaml`, and a code-level
 > safety check re-verifies that before each send.
 
-**Status: Phase 2** (GHL integration). The server takes GHL's inbound webhook,
+**Status: Phases 1–3 complete** (core engine, GHL integration, deploy guide). The server takes GHL's inbound webhook,
 reads free slots from the roofer's GHL calendar, books there, and sends the
-reply, tags, notes and stage moves through the GHL API. Nothing is deployed;
-deployment docs are Phase 3. GHL-side setup: [docs/GHL_SETUP.md](docs/GHL_SETUP.md).
+reply, tags, notes and stage moves through the GHL API. Nothing is deployed.
+GHL-side setup: [docs/GHL_SETUP.md](docs/GHL_SETUP.md). Deploying to Railway:
+[docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Try it: the terminal simulator
 
@@ -46,7 +47,7 @@ Never install packages globally: `uv` owns the environment.
 ## Tests
 
 ```bash
-uv run pytest               # 410 tests, no network, no API key
+uv run pytest               # 424 tests, no network, no API key
 uv run pytest -m live       # 87 more: real model vs. every fixture message (reads ANTHROPIC_API_KEY from .env, costs a few cents)
 uv run ruff check .
 ```
@@ -59,6 +60,7 @@ uv run ruff check .
 | `test_safety.py` | Output safety check: template-only, no dollar amounts, banned phrases, calendar-only times |
 | `test_slots_and_booking.py` | Real slots only, spreading, no repeats, re-check before booking, reschedule, cancel |
 | `test_debounce_idempotency.py` | Burst of texts = one turn; duplicate message ids dropped |
+| `test_photo.py` | Picture-only texts: photo template, contact note, no slots once booked, model never asked |
 | `test_ghl_client.py` | Every GHL path, `Version` header and body; retry rules; token never logged; GHL calendar |
 | `test_webhook.py` | The webhook end to end against a fake GHL (`tests/ghl_fake.py`): secret, payload shapes, `engine-active` gating, booking, retries, handoff and resume |
 
@@ -92,7 +94,8 @@ var is set. Routes: `GET /health` and `POST /webhooks/ghl/inbound`.
 
 What the webhook does with a homeowner's reply:
 
-1. Rejects it without the right `X-Webhook-Secret` header.
+1. Rejects it without the shared secret (`?secret=...` in the URL, or an
+   `X-Webhook-Secret` header).
 2. Finds the client by GHL location id and reads the contact from GHL.
    No `engine-active` tag: ignored. Tag back on a handed-off contact: the
    engine resumes.
@@ -100,7 +103,12 @@ What the webhook does with a homeowner's reply:
    opportunity to `replied`.
 4. Queues the message; the reply goes out after the debounce window.
 
-Debounced turns wait in memory, so run **one** server process.
+A picture with no words is answered from the `photo_received` template (or
+`photo_received_booked` once an inspection is booked) without asking the
+model, and a note is added to the contact.
+
+Debounced turns wait in memory, so run **one** server process. Deploying:
+[docs/DEPLOY.md](docs/DEPLOY.md).
 
 ## Adding a roofer
 
@@ -170,5 +178,5 @@ See `.env.example`. The simulator needs only `ANTHROPIC_API_KEY`.
 | `DATABASE_URL` | no | Defaults to `sqlite:///./booking_engine.db` in this folder |
 | `DEBOUNCE_SECONDS` | no | Default 8 |
 | `ENVIRONMENT`, `LOG_LEVEL` | no | `development`, `INFO` |
-| `GHL_WEBHOOK_SECRET` | server | Shared secret GHL sends in the `X-Webhook-Secret` header |
+| `GHL_WEBHOOK_SECRET` | server | Shared secret GHL sends as `?secret=...` or in the `X-Webhook-Secret` header |
 | `GHL_TOKEN_ROOF_DEMO` | server | Private Integration token; one env var per client, named by `ghl_token_env` |

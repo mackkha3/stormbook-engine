@@ -20,7 +20,13 @@ from booking_engine.config_loader import ConfigError, load_all_clients
 from booking_engine.conversation import REQUIRED_TEMPLATES
 from booking_engine.db import init_db, make_engine
 from booking_engine.ghl_client import GhlError
-from booking_engine.inbound_payload import SECRET_HEADER, BadPayload, parse_body, secret_ok
+from booking_engine.inbound_payload import (
+    SECRET_HEADER,
+    SECRET_PARAM,
+    BadPayload,
+    parse_body,
+    secret_ok,
+)
 from booking_engine.logger import configure as configure_logging
 from booking_engine.logger import get
 from booking_engine.settings import Settings
@@ -86,7 +92,8 @@ async def health(request: Request) -> dict:
 @app.post("/webhooks/ghl/inbound")
 async def ghl_inbound(request: Request) -> JSONResponse:
     state = request.app.state
-    if not secret_ok(request.headers.get(SECRET_HEADER), state.settings.ghl_webhook_secret):
+    provided = request.headers.get(SECRET_HEADER) or request.query_params.get(SECRET_PARAM)
+    if not secret_ok(provided, state.settings.ghl_webhook_secret):
         log.warning("webhook_rejected", extra={"reason": "bad_secret"})
         return JSONResponse({"error": "unauthorized"}, status_code=401)
     try:

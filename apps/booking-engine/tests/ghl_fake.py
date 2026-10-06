@@ -62,9 +62,10 @@ class FakeGhl:
     def sent(self) -> list[str]:
         return [b["message"] for b in self.bodies("POST", "/conversations/messages")]
 
-    def add_inbound(self, message_id: str, body: str) -> None:
+    def add_inbound(self, message_id: str, body: str, attachments: list[str] | None = None) -> None:
         self.messages.append(
             {"id": message_id, "direction": "inbound", "messageType": "TYPE_SMS", "body": body,
+             "attachments": attachments or [],
              "dateAdded": f"2026-10-05T14:{len(self.messages):02d}:00.000Z"}
         )
 

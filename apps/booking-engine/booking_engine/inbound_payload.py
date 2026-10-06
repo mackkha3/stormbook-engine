@@ -20,6 +20,7 @@ from booking_engine.logger import get
 log = get(__name__)
 
 SECRET_HEADER = "X-Webhook-Secret"
+SECRET_PARAM = "secret"      # ?secret=... for GHL's plain Webhook action, which has no headers
 
 
 class BadPayload(ValueError):

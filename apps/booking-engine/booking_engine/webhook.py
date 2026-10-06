@@ -64,19 +64,25 @@ def _text(message: dict[str, Any]) -> str:
     return str(message.get("body") or "").strip()
 
 
-def find_message_id(messages: list[dict[str, Any]], body: str) -> str | None:
-    """Id of the newest inbound message with this text."""
+def _has_photo(message: dict[str, Any]) -> bool:
+    return bool(message.get("attachments"))
+
+
+def find_message(messages: list[dict[str, Any]], body: str) -> dict[str, Any] | None:
+    """The newest inbound message with this text."""
     for message in reversed(messages):
         if message.get("direction") == "inbound" and _text(message) == body.strip():
-            return str(message.get("id") or "") or None
+            return message
     return None
 
 
-def newest_inbound(messages: list[dict[str, Any]]) -> tuple[str, str] | None:
-    """(id, text) of the homeowner's latest text."""
+def newest_inbound(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """The homeowner's latest text: words, a picture, or both."""
     for message in reversed(messages):
-        if message.get("direction") == "inbound" and _is_sms(message) and _text(message):
-            return str(message.get("id") or ""), _text(message)
+        if message.get("direction") == "inbound" and _is_sms(message) and (
+            _text(message) or _has_photo(message)
+        ):
+            return message
     return None
 
 
@@ -166,13 +172,17 @@ async def handle_inbound(runtimes: dict[str, ClientRuntime], inbound: Inbound) -
     conv = rt.engine.store.get_conversation(slug, inbound.contact_id)
 
     messages: list[dict[str, Any]] | None = None
+    matched: dict[str, Any] | None = None
     if not inbound.body:
-        # No usable text in the payload: read what they sent from GHL itself.
+        # No usable text in the payload: read what they sent from GHL itself. It is
+        # either a picture with no words or a text the workflow could not pass on.
         messages = await rt.ghl.recent_messages(inbound.contact_id)
-        latest = newest_inbound(messages)
-        if latest is None:
+        matched = newest_inbound(messages)
+        if matched is None:
             return _ignored("empty_message", inbound)
-        inbound = replace(inbound, message_id=latest[0] or None, body=latest[1])
+        inbound = replace(
+            inbound, message_id=str(matched.get("id") or "") or None, body=_text(matched)
+        )
 
     if gw.TAG_ACTIVE not in tags:
         # Not ours to answer. An opt-out keyword is still recorded for a contact we know.
@@ -189,7 +199,8 @@ async def handle_inbound(runtimes: dict[str, ClientRuntime], inbound: Inbound) -
             except GhlError as exc:
                 log.warning("ghl_messages_unavailable", extra={"error": str(exc)})
                 messages = []
-        message_id = message_id or find_message_id(messages, inbound.body)
+        matched = matched or find_message(messages, inbound.body)
+        message_id = message_id or (matched and str(matched.get("id") or "")) or None
         if conv is None:
             opening_text = find_opening_text(messages)
 
@@ -210,6 +221,7 @@ async def handle_inbound(runtimes: dict[str, ClientRuntime], inbound: Inbound) -
         InboundMessage(
             message_id=message_id or _fallback_message_id(inbound),
             body=inbound.body, timestamp=inbound.timestamp,
+            photo=matched is not None and _has_photo(matched),
         ),
     )
     if not accepted:

@@ -26,6 +26,8 @@ cancelled: "Your inspection is cancelled. If you change your mind, just text us 
 handoff: "Thanks! Someone from {company_name} will follow up with you shortly."
 emergency: "If water is coming in right now, please call {company_phone} so we can help immediately. I'm alerting the team now."
 not_interested: "Understood, thanks for letting us know. If you ever need us, just text here."
+photo_received: "Thanks for the photo. Your inspector will take a look on-site. Does {slot_1} or {slot_2} work?"
+photo_received_booked: "Thanks for the photo. Your inspector will take a look on-site."
 no_slots_available: "Thanks! Someone from {company_name} will reach out shortly to find a time that works."
 
 # --- Opening messages (sent by GHL, NOT by the engine) -------------------------

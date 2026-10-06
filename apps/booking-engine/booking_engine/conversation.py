@@ -25,7 +25,7 @@ REQUIRED_TEMPLATES = {
     "offer_slots", "offer_more_slots", "ask_preference", "propose_time_match",
     "propose_time_no_match", "booked", "deflect", "basic_who", "basic_area", "is_bot",
     "which_one", "clarify", "reschedule", "cancelled", "handoff", "emergency", "not_interested",
-    "no_slots_available",
+    "no_slots_available", "photo_received", "photo_received_booked",
 }
 # Opening texts GHL sends, one per lead source (templates.yaml: opening_<lead_source>).
 # Never sent by the engine; used to seed a new conversation's history.
@@ -45,6 +45,17 @@ async def decide(t: Turn) -> Decision:
         decision = handoff(f"calendar_error: {exc}")
     decision.reopened = was_cancelled and t.conv.status != CANCELLED
     return decision
+
+
+async def decide_photo(t: Turn) -> Decision:
+    """A picture with no words. Code rule, no model: thank them and keep moving to a time."""
+    if t.conv.status == BOOKED:
+        return Decision(template_key="photo_received_booked")
+    t.conv.awaiting_preference = False
+    try:
+        return await _offer(t, "photo_received")
+    except CalendarError as exc:
+        return handoff(f"calendar_error: {exc}")
 
 
 async def _decide(t: Turn) -> Decision:

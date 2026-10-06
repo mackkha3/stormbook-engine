@@ -21,6 +21,7 @@ from booking_engine.conversation import (
     LEAD_SOURCES,
     REQUIRED_TEMPLATES,
     decide,
+    decide_photo,
 )
 from booking_engine.debounce import Debouncer
 from booking_engine.logger import get
@@ -49,6 +50,10 @@ log = get(__name__)
 
 MAX_ENGINE_MESSAGES = 8      # without a booking; the next reply becomes a handoff
 NOTE_MESSAGES = 6
+PHOTO_TEXT = "[photo]"       # stands in for a picture-only text in history, notes and logs
+PHOTO_NOTE = (
+    "Booking engine: the homeowner sent a photo by text. It is in their GHL conversation."
+)
 
 
 class Engine:
@@ -106,8 +111,9 @@ class Engine:
         """Process one debounced turn. Sends at most one reply."""
         conv = self.open_conversation(contact)
         bodies = [m.body.strip() for m in messages if m.body.strip()]
-        text = "\n".join(bodies)
-        result = TurnResult(inbound_text=text, status=conv.status)
+        photo = any(m.photo for m in messages)
+        text = "\n".join(bodies) or (PHOTO_TEXT if photo else "")
+        result = TurnResult(inbound_text=text, status=conv.status, photo=photo)
         try:
             await self._run(conv, bodies, text, result)
         except Exception as exc:
@@ -183,6 +189,12 @@ class Engine:
         u: Understanding | None = None
         if opt_out:
             u = Understanding(intent="opt_out", confidence=1.0, notes="opt-out keyword (code rule)")
+        elif result.photo and not bodies:
+            result.intent = "photo"
+            decision = await decide_photo(
+                Turn(conv=conv, u=None, text=text, client=self.client,
+                     calendar=self.calendar, templates=self.templates, now=now)
+            )
         else:
             try:
                 u = await self.understander.understand(
@@ -273,6 +285,8 @@ class Engine:
             await crm("send_sms", message=message)
             conv.engine_message_count += 1
             result.template_key, result.reply = message.key, message.text
+        if result.photo:
+            await crm("add_note", body=PHOTO_NOTE)
         if decision.mark_booked:
             await crm("set_stage", stage="booked")
             await crm("add_tags", tags=[gw.TAG_BOOKED])

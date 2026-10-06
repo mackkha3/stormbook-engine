@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -9,9 +11,10 @@ from fastapi.testclient import TestClient
 from booking_engine import main
 from booking_engine.calendar.ghl import GhlCalendar
 from booking_engine.db import init_db, make_engine
-from booking_engine.engine import Engine
+from booking_engine.engine import PHOTO_NOTE, Engine
 from booking_engine.gateway import GhlGateway
 from booking_engine.inbound_payload import BadPayload, parse_inbound, secret_ok
+from booking_engine.logger import _JsonFormatter
 from booking_engine.settings import Settings
 from booking_engine.store import Store
 from booking_engine.templates import Templates
@@ -149,6 +152,69 @@ def test_app_boots_with_a_live_config_and_guards_the_webhook(monkeypatch):
     with TestClient(main.app) as client:
         assert client.get("/health").json()["clients"] == 1
         assert client.post("/webhooks/ghl/inbound", json={}).status_code == 401
+
+
+# --- the secret as a query parameter (GHL's plain Webhook action) -----------------
+
+async def test_the_secret_is_also_accepted_as_a_query_parameter(site: Site):
+    site.ghl.add_inbound("m-q", "yes")
+    payload = {"location_id": LOCATION, "contact_id": "c1", "message_body": "yes"}
+    wrong = await site.http.post("/webhooks/ghl/inbound?secret=wrong", json=payload)
+    assert wrong.status_code == 401 and site.ghl.requests == []
+    right = await site.http.post(f"/webhooks/ghl/inbound?secret={SECRET}", json=payload)
+    await site.engine.debouncer.drain()
+    assert right.json() == {"status": "accepted"} and len(site.ghl.sent) == 1
+
+
+def test_a_secret_in_a_request_line_is_redacted_from_the_logs():
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, __file__, 1, '%s - "%s %s HTTP/%s" %d',
+        ("10.0.0.1:1", "POST", f"/webhooks/ghl/inbound?secret={SECRET}&x=1", "1.1", 200), None,
+    )
+    line = _JsonFormatter().format(record)
+    assert SECRET not in line and "secret=[redacted]&x=1" in line
+
+
+# --- picture-only texts -------------------------------------------------------------
+
+PHOTO = ["https://storage.example/roof.jpg"]
+
+
+async def test_a_picture_only_text_is_thanked_and_noted_on_the_contact(site: Site):
+    site.ghl.add_inbound("m-pic", "", attachments=PHOTO)
+    response = await site.post({"location_id": LOCATION, "contact_id": "c1", "message_body": ""})
+    assert response.json() == {"status": "accepted"}
+    assert site.ghl.sent == [(
+        "Thanks for the photo. Your inspector will take a look on-site. "
+        "Does Mon 10/5 at 11:00 AM or Tue 10/6 at 3:00 PM work?"
+    )]
+    assert site.ghl.bodies("POST", "/notes") == [{"body": PHOTO_NOTE}]
+    assert site.understander.contexts == []
+    assert site.store.turns(site.conv.id)[-1].inbound_message_ids == ["m-pic"]
+
+
+async def test_a_picture_after_booking_is_thanked_without_slots(site: Site):
+    await site.text("yes", U("affirm"))
+    await site.text("1", U("pick_slot", slot_choice=1))
+    site.ghl.add_inbound("m-pic", "", attachments=PHOTO)
+    await site.post({"location_id": LOCATION, "contact_id": "c1", "message_body": ""})
+    assert site.ghl.sent[-1] == "Thanks for the photo. Your inspector will take a look on-site."
+    assert site.conv.status == "booked" and len(site.ghl.appointments) == 1
+
+
+async def test_a_picture_sent_with_words_is_noted_and_the_words_are_understood(site: Site):
+    site.ghl.add_inbound("m-both", "is this bad", attachments=PHOTO)
+    site.understander.queue.append(U("deferrable_question"))
+    await site.post({"location_id": LOCATION, "contact_id": "c1", "message_body": "is this bad"})
+    assert site.ghl.sent[-1].startswith("Good question.")
+    assert site.ghl.bodies("POST", "/notes") == [{"body": PHOTO_NOTE}]
+
+
+async def test_a_picture_from_a_contact_without_engine_active_is_ignored(site: Site):
+    site.ghl.tags = set()
+    site.ghl.add_inbound("m-pic", "", attachments=PHOTO)
+    response = await site.post({"location_id": LOCATION, "contact_id": "c1", "message_body": ""})
+    assert response.json()["reason"] == "not_engine_active" and site.ghl.sent == []
 
 
 # --- gating ------------------------------------------------------------------------

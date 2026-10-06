@@ -4,8 +4,8 @@ What to create in a roofer's GHL sub-account so the booking engine can answer
 homeowner replies and book inspections. Do this once per client, then fill in
 `config/clients/<client_slug>.yaml`.
 
-Nothing here deploys anything. Step 4 needs the engine's public URL, which
-exists only after Phase 3.
+Nothing here deploys anything. Step 4 needs the engine's public URL; see
+[DEPLOY.md](DEPLOY.md).
 
 ## 1. Private Integration token
 
@@ -71,14 +71,44 @@ Use one calendar for inspections, with at least one team member assigned.
 1. **Trigger:** Customer Replied. Filter **Reply channel = SMS**.
 2. Optional filter: contact has tag `engine-active`. This only saves webhook
    executions; the engine checks the tag itself either way.
-3. **Action:** Custom Webhook (a premium action, billed per execution).
+3. **Action:** Webhook (the plain, free one).
    - Method `POST`
-   - URL `https://<engine-host>/webhooks/ghl/inbound`
-   - Authorization: none
-   - Header `X-Webhook-Secret`: the value of `GHL_WEBHOOK_SECRET` in the
-     engine's `.env`. Generate it with `openssl rand -hex 32`.
-   - Header `Content-Type`: `application/json`
-   - Body (raw JSON):
+   - URL `https://<engine-host>/webhooks/ghl/inbound?secret=<GHL_WEBHOOK_SECRET>`
+   - Custom Data, one row each:
+
+| Key | Value |
+|---|---|
+| `location_id` | `{{location.id}}` |
+| `contact_id` | `{{contact.id}}` |
+| `contact_phone` | `{{contact.phone}}` |
+| `message_body` | `{{message.body}}` |
+
+`<GHL_WEBHOOK_SECRET>` is the value from the engine's `.env`. Generate it with
+`openssl rand -hex 32` so it is safe to put in a URL.
+
+The secret is part of the URL, so anyone who can open this workflow can read
+it. Treat the workflow like a password field, and if the URL is ever shared
+or screenshotted, change `GHL_WEBHOOK_SECRET` and update the URL. The engine
+removes the secret from its own logs.
+
+`message_id` and `timestamp` are optional rows. Without a message id the
+engine uses the id of the matching message in the GHL conversation to drop
+retries.
+
+**Picture-only texts** arrive with an empty `message_body`. The engine then
+reads the message from GHL, thanks the homeowner for the photo from a
+template, and adds a note to the contact.
+
+Responses: `200 {"status": "accepted" | "duplicate" | "ignored"}`, `401` wrong
+or missing secret, `422` unreadable payload, `502` GHL API unreachable.
+
+### Alternative: Custom Webhook action
+
+The premium Custom Webhook action (billed per execution) can send the secret
+in a header instead, which keeps it out of the URL. Use URL
+`https://<engine-host>/webhooks/ghl/inbound` with no `?secret=`, Authorization
+none, headers `X-Webhook-Secret: <GHL_WEBHOOK_SECRET>` and
+`Content-Type: application/json`, and this raw JSON body:
 
 ```json
 {
@@ -90,17 +120,8 @@ Use one calendar for inspections, with at least one team member assigned.
 ```
 
 Keep `location_id` and `contact_id` first. If a homeowner's text contains a
-quote or a line break the JSON arrives broken; the engine then reads those two
-ids and fetches the text from GHL itself.
-
-`message_id` and `timestamp` are optional. Without a message id the engine
-uses the id of the matching message in the GHL conversation to drop retries.
-
-The plain **Webhook** action is not enough: per GHL's help article it has no
-custom headers, so it cannot carry the secret.
-
-Responses: `200 {"status": "accepted" | "duplicate" | "ignored"}`, `401` wrong
-or missing secret, `422` unreadable payload, `502` GHL API unreachable.
+quote or a line break this JSON arrives broken; the engine then reads those
+two ids and fetches the text from GHL itself.
 
 ## 5. Workflow: `engine-handoff` alert
 
@@ -176,6 +197,10 @@ leave open, to confirm with one real test contact before a real lead:
 2. **A taken slot is recognised.** When GHL refuses a booking, the engine
    treats a 400/409/422 whose message mentions "slot" as "taken" and offers
    other times. Any other refusal hands off.
-3. **The merge fields fill in.** In the workflow's execution log, confirm the
-   webhook body shows real values for `{{location.id}}`, `{{contact.id}}` and
-   `{{message.body}}`.
+3. **The Custom Data arrives.** In the workflow's execution log, confirm the
+   webhook body carries real values for `location_id`, `contact_id` and
+   `message_body`. The engine reads them at the top level or under
+   `customData`.
+4. **A photo is seen.** Text the test contact a picture with no words and
+   confirm the "Thanks for the photo" reply. The engine recognises a photo by
+   the `attachments` list on the message in GHL's Conversations API.

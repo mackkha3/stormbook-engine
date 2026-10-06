@@ -31,6 +31,7 @@ class InboundMessage:
     message_id: str
     body: str
     timestamp: datetime | None = None
+    photo: bool = False          # the text carried a picture (or other attachment)
 
 
 @dataclass
@@ -45,6 +46,7 @@ class TurnResult:
     handoff_reason: str | None = None
     crm_calls: list[dict[str, Any]] = field(default_factory=list)
     ignored: bool = False
+    photo: bool = False
 
 
 @dataclass
@@ -74,7 +76,7 @@ def handoff(reason: str, *, template: str | None = "handoff", urgent: bool = Fal
 @dataclass
 class Turn:
     conv: Conversation
-    u: Understanding
+    u: Understanding | None      # None for a picture with no words: the model is not asked
     text: str
     client: ClientConfig
     calendar: Calendar
