@@ -5,6 +5,8 @@ from __future__ import annotations
 import datetime as dt
 from datetime import datetime, timedelta
 
+import pytest
+
 from booking_engine.calendar.base import CalendarError
 from booking_engine.slots import eligible, format_slot, pick_spread, slot_key
 from tests.conftest import NOW, SLOT_1, SLOT_2, TZ, Harness, U
@@ -170,6 +172,79 @@ async def test_reschedule_moves_the_existing_appointment(h: Harness):
     assert result.booking["action"] == "rescheduled" and appointment.slot == new_slot
     assert format_slot(new_slot, TZ) in result.reply
     assert await h.calendar.is_free(SLOT_1)           # the old time opened back up
+
+
+def live_appointments(h: Harness):
+    return [a for a in h.calendar.appointments.values() if not a.cancelled]
+
+
+WEDNESDAY = dt.date(2026, 10, 7)
+
+
+@pytest.mark.parametrize(
+    "misread",
+    [
+        U("propose_time", preferred_date=WEDNESDAY),          # what the live model actually said
+        U("pick_slot", preferred_date=WEDNESDAY),
+        U("pick_slot", slot_choice=1, preferred_date=WEDNESDAY),   # a slot number with nothing offered
+        U("none_work", preferred_date=WEDNESDAY),
+        U("affirm", preferred_date=WEDNESDAY),
+        U("reschedule", preferred_date=WEDNESDAY),
+    ],
+    ids=lambda u: f"{u.intent}-{u.slot_choice}",
+)
+async def test_booked_plus_a_different_day_moves_the_one_appointment(h: Harness, misread):
+    await h.reach("booked")                                   # booked Mon 10/5 at 11:00 AM
+    (original,) = h.calendar.appointments.values()
+
+    proposed = await h.say("can we do wednesday instead", misread)
+    assert proposed.template_key == "propose_time_match" and proposed.booking is None
+    assert proposed.reply.startswith("Wed 10/7 at ")
+    assert len(h.calendar.appointments) == 1 and original.slot == SLOT_1     # nothing changed yet
+
+    confirmed = await h.say("yes", U("affirm"))
+    assert confirmed.template_key == "booked" and confirmed.booking["action"] == "rescheduled"
+    assert len(h.calendar.appointments) == 1                  # moved, never a second appointment
+    (appointment,) = live_appointments(h)
+    assert appointment.id == original.id == h.conv.appointment_id
+    assert appointment.slot.date() == WEDNESDAY and "Wed 10/7" in confirmed.reply
+    assert await h.calendar.is_free(SLOT_1)                   # Monday opened back up
+
+
+@pytest.mark.parametrize("intent", ["propose_time", "pick_slot", "none_work"])
+async def test_booked_with_no_day_named_offers_reschedule_slots(h: Harness, intent):
+    await h.reach("booked")
+    result = await h.say("that time wont work anymore", U(intent))
+    assert result.template_key == "reschedule" and result.handoff_reason is None
+    await h.say("2", U("pick_slot", slot_choice=2))
+    assert len(h.calendar.appointments) == 1 and len(live_appointments(h)) == 1
+    assert h.conv.status == "booked"
+
+
+async def test_none_work_during_a_reschedule_offers_other_times_and_still_moves(h: Harness):
+    await h.reach("booked")
+    first = await h.say("can we move it", U("reschedule"))
+    first_offer = set(h.conv.current_offer)
+    second = await h.say("neither", U("none_work"))
+    assert (first.template_key, second.template_key) == ("reschedule", "reschedule")
+    assert not first_offer & set(h.conv.current_offer)
+    result = await h.say("1", U("pick_slot", slot_choice=1))
+    assert result.booking["action"] == "rescheduled" and len(h.calendar.appointments) == 1
+
+
+async def test_bare_yes_when_booked_with_nothing_pending_still_gets_no_reply(h: Harness):
+    await h.reach("booked")
+    result = await h.say("ok thanks", U("affirm"))
+    assert result.reply is None and len(h.calendar.appointments) == 1
+
+
+async def test_many_reschedules_never_leave_more_than_one_appointment(h: Harness):
+    await h.reach("booked")
+    for day in (7, 8, 9):
+        await h.say("different day", U("propose_time", preferred_date=dt.date(2026, 10, day)))
+        await h.say("yes", U("affirm"))
+        assert len(h.calendar.appointments) == 1
+        assert next(iter(h.calendar.appointments.values())).slot.day == day
 
 
 async def test_cancel_cancels_the_appointment_confirms_and_notifies(h: Harness):

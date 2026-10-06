@@ -29,6 +29,7 @@ REQUIRED_TEMPLATES = {
 }
 
 REOPEN_INTENTS = ("affirm", "propose_time", "pick_slot", "none_work")
+RESCHEDULE_WHEN_BOOKED = ("reschedule", "propose_time", "pick_slot", "none_work", "affirm")
 
 
 async def decide(t: Turn) -> Decision:
@@ -83,13 +84,24 @@ async def _decide(t: Turn) -> Decision:
         conv.current_offer = []
         return Decision(template_key="not_interested")
 
-    if booked and not conv.current_offer:
-        # Booked and nothing pending: only a move request keeps the engine talking.
-        if intent == "affirm":
-            return Decision()    # "ok thanks" after the confirmation needs no reply
-        if intent == "reschedule" or (intent in ("propose_time", "pick_slot") and t.has_preference):
-            return await (_propose(t) if t.has_preference else _offer(t, "reschedule", fresh=True))
-        return handoff(f"{intent}_after_booking")
+    if booked:
+        # There is an appointment, so anything about a different time is a reschedule,
+        # whatever the model called it. The only bookings allowed from here are moves of
+        # that appointment (see _book): answering an offer the engine made, by number
+        # or with a plain "yes".
+        answers_offer = bool(conv.current_offer) and (
+            (intent == "pick_slot" and u.slot_choice and u.slot_choice <= len(conv.current_offer))
+            or (intent == "affirm" and not t.has_preference)
+        )
+        if not answers_offer:
+            if intent in RESCHEDULE_WHEN_BOOKED and (intent != "affirm" or t.has_preference):
+                return await (
+                    _propose(t) if t.has_preference else _offer(t, "reschedule", fresh=True)
+                )
+            if intent == "affirm":
+                return Decision()    # "ok thanks" after the confirmation needs no reply
+            if not conv.current_offer:
+                return handoff(f"{intent}_after_booking")
 
     if intent == "affirm":
         if not conv.current_offer:
@@ -105,8 +117,6 @@ async def _decide(t: Turn) -> Decision:
         return await (_propose(t) if t.has_preference else _unclear(t))
     if intent == "reschedule" and t.has_preference:
         return await _propose(t)
-    if intent == "reschedule" and booked:
-        return await _offer(t, "reschedule", fresh=True)
     if intent in ("none_work", "reschedule"):
         conv.none_work_streak = t.prev_none_work + 1
         if conv.none_work_streak >= 2:
@@ -185,7 +195,8 @@ async def _propose(t: Turn) -> Decision:
 async def _book(t: Turn, slot: datetime) -> Decision:
     """Re-check the slot is still free, then book it (or move the existing appointment)."""
     conv, c = t.conv, t.client
-    moving = conv.appointment_id is not None and conv.status == BOOKED
+    # An existing appointment is always moved; a contact never gets a second one.
+    moving = conv.appointment_id is not None
     still_free = slot >= t.now + timedelta(minutes=c.min_lead_time_minutes)
     try:
         still_free = still_free and await t.calendar.is_free(slot)

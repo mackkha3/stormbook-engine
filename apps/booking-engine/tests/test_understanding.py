@@ -15,12 +15,14 @@ from anthropic.types import JSONOutputFormatParam
 from booking_engine.settings import APP_ROOT, Settings
 from booking_engine.understanding import (
     INTENTS,
+    MIN_CONFIDENCE,
     MODEL,
     OUTPUT_SCHEMA,
     SYSTEM_PROMPT,
     AnthropicUnderstander,
     TurnContext,
     UnderstandingError,
+    apply_confidence_rule,
     build_user_content,
     keyword_opt_out,
     parse_understanding,
@@ -149,6 +151,7 @@ async def test_real_sdk_client_builds_the_request_without_a_type_error():
         http_client=anthropic.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler)),
     )
     u = await AnthropicUnderstander("k", client=real).understand(_ctx())
+    await real.close()
     assert u.intent == "pick_slot"
     (body,) = sent
     assert body["model"] == MODEL and body["temperature"] == 0
@@ -280,14 +283,19 @@ async def test_live_model_classifies_fixture(fixture):
         awaiting_preference=bool(conv and conv.awaiting_preference),
         history=h.store.recent_messages(conv.id) if conv else [],
     )
-    u = await AnthropicUnderstander(api_key).understand(ctx)
+    # Opened and closed inside this test's own event loop.
+    async with AnthropicUnderstander(api_key) as understander:
+        raw = await understander.understand(ctx)
+    u = apply_confidence_rule(raw)       # what the engine acts on: low confidence → unclear
     if fixture.get("live_not_opt_out"):
         assert u.intent != "opt_out", u.notes
         return
-    assert u.intent == fixture["intent"], u.notes
+    assert u.intent == fixture["intent"], f"model said {raw.intent} ({raw.confidence}): {raw.notes}"
     assert u.language == "en"
+    if fixture["intent"] == "unclear":
+        return          # nothing else to extract, and low confidence is a fine way to get here
     if u.intent != "opt_out":
-        assert u.confidence >= 0.7
+        assert u.confidence >= MIN_CONFIDENCE
     for key in ("slot_choice", "preferred_time_window", "question_topic", "acknowledgment_only"):
         if key in fixture:
             assert getattr(u, key) == fixture[key]
@@ -304,3 +312,86 @@ def test_settings_load_the_api_key_from_the_app_env_file(tmp_path, monkeypatch):
     monkeypatch.setattr("booking_engine.settings.APP_ROOT", tmp_path)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     assert Settings.from_env().anthropic_api_key == "sk-from-dotenv"
+
+
+# --- confidence rule (shared by the engine and the live eval) ------------------
+
+
+def test_confidence_rule_routes_low_confidence_to_unclear_except_opt_out():
+    low = parse_understanding(json.dumps({**VALID, "confidence": 0.69}))
+    assert apply_confidence_rule(low).intent == "unclear"
+    assert apply_confidence_rule(low).slot_choice == 2            # details are kept
+    edge = parse_understanding(json.dumps({**VALID, "confidence": 0.7}))
+    assert apply_confidence_rule(edge).intent == "pick_slot"
+    opt_out = parse_understanding(json.dumps({**VALID, "intent": "opt_out", "confidence": 0.2}))
+    assert apply_confidence_rule(opt_out).intent == "opt_out"
+    already = parse_understanding(json.dumps({**VALID, "intent": "unclear", "confidence": 0.3}))
+    assert apply_confidence_rule(already).intent == "unclear"
+
+
+# --- prompt wording the live run depends on -------------------------------------
+
+
+def test_prompt_defines_each_question_topic():
+    for line in (
+        '"who" = who is texting, what company this is, why are you texting me.',
+        '"area" = the service area or location',
+        '"other" = any other factual question about the business',
+        '"are you guys licensed" is "other"',
+    ):
+        assert line in SYSTEM_PROMPT
+
+
+def test_prompt_says_a_different_time_after_booking_is_reschedule():
+    assert "ANY request for a different day or time is reschedule" in SYSTEM_PROMPT
+    assert "can we do wednesday instead" in SYSTEM_PROMPT
+
+
+# --- one client, closed properly ---------------------------------------------------
+
+
+async def test_understander_reuses_one_client_and_closes_it_in_the_running_loop():
+    understander = AnthropicUnderstander("not-used")
+    client = understander._client
+    assert isinstance(client, anthropic.AsyncAnthropic) and not client.is_closed()
+    assert understander._client is client                 # same client for every turn
+    await understander.aclose()
+    assert client.is_closed()
+    await understander.aclose()                           # closing twice is harmless
+
+
+async def test_understander_as_context_manager_closes_on_exit_even_on_error():
+    with pytest.raises(RuntimeError):
+        async with AnthropicUnderstander("not-used") as understander:
+            client = understander._client
+            raise RuntimeError("turn blew up")
+    assert client.is_closed()
+
+
+async def test_understander_does_not_close_a_client_it_was_given():
+    shared = anthropic.AsyncAnthropic(api_key="not-used")
+    async with AnthropicUnderstander("k", client=shared):
+        pass
+    assert not shared.is_closed()
+    await shared.close()
+
+
+async def test_simulator_closes_its_client_before_the_loop_ends(monkeypatch):
+    import argparse
+
+    from booking_engine import simulate
+
+    created: list[AnthropicUnderstander] = []
+
+    class Tracking(AnthropicUnderstander):
+        def __init__(self, api_key):
+            super().__init__(api_key)
+            created.append(self)
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-used")
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    monkeypatch.setattr(simulate, "AnthropicUnderstander", Tracking)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "/quit")
+    args = argparse.Namespace(client="roof-demo", debounce=0.0, verbose=False)
+    assert await simulate.run(args) == 0
+    assert len(created) == 1 and created[0]._client.is_closed()

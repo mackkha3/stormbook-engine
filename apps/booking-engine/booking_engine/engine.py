@@ -35,12 +35,12 @@ from booking_engine.understanding import (
     Understander,
     Understanding,
     UnderstandingError,
+    apply_confidence_rule,
     keyword_opt_out,
 )
 
 log = get(__name__)
 
-MIN_CONFIDENCE = 0.7
 MAX_ENGINE_MESSAGES = 8      # without a booking; the next reply becomes a handoff
 NOTE_MESSAGES = 6
 
@@ -150,8 +150,8 @@ class Engine:
             if u.intent != "opt_out":       # opt_out always wins, whatever else is true
                 if not u.language.lower().startswith("en"):
                     decision = handoff(f"non_english:{u.language}")
-                elif u.confidence < MIN_CONFIDENCE:
-                    u = u.model_copy(update={"intent": "unclear"})
+                else:
+                    u = apply_confidence_rule(u)
             result.intent = u.intent
             if decision is None:
                 decision = await decide(

@@ -12,7 +12,7 @@ import datetime as dt
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, get_args
+from typing import Any, Literal, Protocol, Self, get_args
 
 import anthropic
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -24,6 +24,7 @@ log = get(__name__)
 
 MODEL = "claude-haiku-4-5-20251001"
 HISTORY_LIMIT = 6
+MIN_CONFIDENCE = 0.7
 
 Intent = Literal[
     "affirm", "pick_slot", "propose_time", "none_work", "deferrable_question",
@@ -52,6 +53,13 @@ class Understanding(BaseModel):
         if v is not None and not valid_window(v):
             raise ValueError(f"unrecognised time window {v!r}")
         return v
+
+
+def apply_confidence_rule(u: Understanding) -> Understanding:
+    """Below MIN_CONFIDENCE the intent is treated as `unclear`. An opt-out always stands."""
+    if u.intent != "opt_out" and u.confidence < MIN_CONFIDENCE:
+        return u.model_copy(update={"intent": "unclear"})
+    return u
 
 
 class UnderstandingError(Exception):
@@ -131,10 +139,15 @@ slots ("can u do saturday", "tmrw after 3").
 "those don't work", "anything next week?", "got anything later?").
 - deferrable_question: anything about price, cost, whether it is free, insurance, \
 deductibles, claims, how bad the damage is, materials, how long work takes, warranties.
-- basic_question: who is texting, which company, why they are being texted, whether \
-the company covers their area.
+- basic_question: a factual question about the company itself: who is texting, which \
+company, why they are being texted, whether the company covers their area, whether it \
+is licensed, its hours, its experience.
 - is_bot: asks whether this is a bot, AI, automated, or a real person.
-- reschedule: has a booked appointment and wants to move it.
+- reschedule: has a booked appointment and wants to move it. Once an appointment is \
+booked, ANY request for a different day or time is reschedule, not propose_time, \
+pick_slot or none_work ("can we do wednesday instead", "that day won't work anymore", \
+"got anything later?"). Still fill preferred_date / preferred_time_window. The one \
+exception: choosing one of the currently offered slots is pick_slot.
 - cancel: has a booked appointment and wants to cancel it ("cancel", "never mind").
 (If conversation_status is "cancelled", they already cancelled: "yes" / "actually let's \
 do it" is affirm, a named day is propose_time.)
@@ -161,9 +174,13 @@ next occurrence of a weekday, never a past date. Else null.
 - preferred_time_window: exactly one of "morning", "afternoon", "evening", \
 "after HH:MM", "before HH:MM" (24-hour clock), else null. "after 3" for an inspection \
 means "after 15:00"; an exact time such as "at 2pm" becomes "after 14:00".
-- question_topic: only for basic_question, what they are asking: "who" (who is \
-texting, which company, why am I getting this), "area" (whether the company covers or \
-comes out to their location), or "other". Null for every other intent.
+- question_topic: only for basic_question; null for every other intent. One of:
+  "who" = who is texting, what company this is, why are you texting me.
+  "area" = the service area or location: whether the company covers or comes out to \
+where they live, where the company is based.
+  "other" = any other factual question about the business: licensing, insurance \
+coverage of the company itself, hours, years of experience, reviews, and so on \
+("are you guys licensed" is "other").
 - acknowledgment_only: true when the message is nothing more than an acknowledgement \
 or thanks ("ok", "thanks", "got it", "sounds good", a thumbs up) and asks for nothing. \
 False if they want anything, including "yes" to scheduling or rebooking.
@@ -230,11 +247,30 @@ def parse_understanding(raw: str) -> Understanding:
 
 
 class AnthropicUnderstander:
+    """Holds ONE AsyncAnthropic client for its whole life.
+
+    Create one per process (per event loop) and share it across turns and clients;
+    close it with `await aclose()` or `async with` before the loop ends, otherwise
+    the HTTP connections are torn down after the loop is gone ("Event loop is closed").
+    """
+
     def __init__(self, api_key: str, *, client: Any | None = None) -> None:
+        self._owns_client = client is None
         # The SDK's own retries are off: the spec is exactly one retry, counted here.
         self._client = client or anthropic.AsyncAnthropic(
             api_key=api_key, max_retries=0, timeout=20.0
         )
+
+    async def aclose(self) -> None:
+        """Close the HTTP client, if this object created it. Safe to call twice."""
+        if self._owns_client and not self._client.is_closed():
+            await self._client.close()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await self.aclose()
 
     async def _ask(self, ctx: TurnContext) -> Understanding:
         response = await self._client.messages.create(

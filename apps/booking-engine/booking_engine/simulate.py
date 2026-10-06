@@ -17,7 +17,7 @@ import uuid
 from datetime import UTC, datetime
 
 from booking_engine.calendar.mock import MockCalendar
-from booking_engine.config_loader import ConfigError, load_client
+from booking_engine.config_loader import ClientConfig, ConfigError, load_client
 from booking_engine.db import init_db, make_engine
 from booking_engine.engine import Contact, Engine, InboundMessage, TurnResult
 from booking_engine.gateway import RecordingGateway
@@ -82,11 +82,24 @@ async def run(args: argparse.Namespace) -> int:
         )
         return 1
 
+    # One Anthropic client for the whole session, closed before the event loop ends.
+    async with AnthropicUnderstander(settings.anthropic_api_key) as understander:
+        await _session(args, settings, client, templates, understander)
+    return 0
+
+
+async def _session(
+    args: argparse.Namespace,
+    settings: Settings,
+    client: ClientConfig,
+    templates: Templates,
+    understander: AnthropicUnderstander,
+) -> None:
     store = Store(init_db(make_engine(settings.database_url)))
     calendar = MockCalendar(client.tz)
     engine = Engine(
         client=client, templates=templates, store=store, calendar=calendar,
-        understander=AnthropicUnderstander(settings.anthropic_api_key),
+        understander=understander,
         gateway=RecordingGateway(), debounce_seconds=args.debounce, on_turn=_print_turn,
     )
 
@@ -147,7 +160,6 @@ async def run(args: argparse.Namespace) -> int:
                 await engine.debouncer.drain()
 
     await engine.debouncer.drain()
-    return 0
 
 
 def main() -> None:
