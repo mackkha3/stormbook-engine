@@ -23,6 +23,7 @@ async def test_fixture_message_gets_the_expected_action(fixture):
         preferred_time_window=fixture.get("preferred_time_window"),
         question_topic=fixture.get("question_topic"),
         acknowledgment_only=fixture.get("acknowledgment_only", False),
+        different_day=fixture.get("different_day", False),
     )
     result = await h.say(fixture["text"], understanding)
     assert (result.template_key or "none") == fixture["expect"]
@@ -149,8 +150,9 @@ async def test_bare_yes_to_two_options_asks_which_one(h: Harness):
 
 
 async def test_max_eight_messages_without_booking_then_handoff(h: Harness):
-    for _ in range(8):
-        assert (await h.say("how much", U("deferrable_question"))).template_key == "deflect"
+    for i in range(8):
+        expected = "deflect_again" if i % 2 else "deflect"     # never the same wording twice running
+        assert (await h.say("how much", U("deferrable_question"))).template_key == expected
     result = await h.say("but how much", U("deferrable_question"))
     assert (result.template_key, result.handoff_reason) == ("handoff", "max_messages_without_booking")
 
@@ -596,3 +598,14 @@ def test_simulator_rejects_an_unknown_lead_source():
 
     with pytest.raises(SystemExit):
         simulate.build_parser().parse_args(["--lead-source", "billboard"])
+
+
+async def test_two_questions_in_a_row_get_different_deflect_wording(h: Harness):
+    first = await h.say("how much", U("deferrable_question"))
+    second = await h.say("will insurance pay", U("deferrable_question"))
+    third = await h.say("what are your hours", U("basic_question", question_topic="other"))
+    assert [r.template_key for r in (first, second, third)] == ["deflect", "deflect_again", "deflect"]
+    assert first.reply != second.reply and second.reply != third.reply
+    # The same two times stay on the table throughout.
+    assert all("Mon 10/5 at 11:00 AM" in r.reply and "Tue 10/6 at 12:00 PM" in r.reply
+               for r in (first, second, third))

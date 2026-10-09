@@ -311,3 +311,22 @@ async def test_cancel_cancels_the_appointment_confirms_and_notifies(h: Harness):
     (note,) = h.gateway.notes()
     assert note.startswith("Booking engine: the homeowner cancelled their inspection by text.")
     assert "homeowner: can we cancel monday" in note and "engine: Your inspection is cancelled" in note
+
+
+async def test_reschedule_to_a_different_day_never_offers_the_booked_day():
+    plain, different = Harness(), Harness()
+    for h in (plain, different):
+        await h.reach("booked")                               # booked Mon 10/5 at 11:00 AM
+    same_day_ok = await plain.say("can we move it", U("reschedule"))
+    assert same_day_ok.template_key == "reschedule" and "Mon 10/5" in same_day_ok.reply
+
+    moved = await different.say("need a different day", U("reschedule", different_day=True))
+    assert moved.template_key == "reschedule" and "Mon 10/5" not in moved.reply
+    assert len(different.calendar.appointments) == 1 and different.conv.status == "booked"
+
+
+async def test_a_different_day_with_a_time_of_day_also_skips_the_booked_day(h: Harness):
+    await h.reach("booked")                                   # booked Mon 10/5 at 11:00 AM
+    result = await h.say("another day, afternoon is better", U(
+        "reschedule", different_day=True, preferred_time_window="afternoon"))
+    assert result.template_key == "propose_time_match" and "Mon 10/5" not in result.reply

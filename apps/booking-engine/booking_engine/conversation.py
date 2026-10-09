@@ -14,6 +14,7 @@ from booking_engine.calendar.base import CalendarError, SlotUnavailable
 from booking_engine.models import ACTIVE, BOOKED, CANCELLED, CLOSED, OPTED_OUT
 from booking_engine.slots import (
     closest,
+    from_key,
     matching,
     pick_spread,
     slot_key,
@@ -23,7 +24,7 @@ from booking_engine.turn import Decision, Turn, handoff
 
 REQUIRED_TEMPLATES = {
     "offer_slots", "offer_more_slots", "ask_preference", "propose_time_match",
-    "propose_time_no_match", "booked", "deflect", "basic_who", "basic_area", "is_bot",
+    "propose_time_no_match", "booked", "deflect", "deflect_again", "basic_who", "basic_area", "is_bot",
     "which_one", "clarify", "reschedule", "cancelled", "handoff", "emergency", "not_interested",
     "no_slots_available", "photo_received", "photo_received_booked",
 }
@@ -105,6 +106,9 @@ async def _decide(t: Turn) -> Decision:
         # whatever the model called it. The only bookings allowed from here are moves of
         # that appointment (see _book): answering an offer the engine made, by number
         # or with a plain "yes".
+        if u.different_day and u.preferred_date is None:
+            # "A different day": nothing on the day they are booked for now.
+            t.avoid_date = from_key(conv.booked_time, t.client.tz).date()
         answers_offer = bool(conv.current_offer) and (
             (intent == "pick_slot" and u.slot_choice and u.slot_choice <= len(conv.current_offer))
             or (intent == "affirm" and not t.has_preference)
@@ -142,11 +146,12 @@ async def _decide(t: Turn) -> Decision:
             return _ask_preference(t)
         return await _offer(t, "offer_more_slots", fresh=True)
     if intent == "deferrable_question":
-        return await _offer(t, "deflect")
+        return await _deflect(t)
     if intent == "basic_question":
         # "who" or no topic → who we are; "other" has no approved answer → defer to the inspector.
-        by_topic = {"area": "basic_area", "other": "deflect"}
-        return await _offer(t, by_topic.get(u.question_topic, "basic_who"))
+        if u.question_topic == "other":
+            return await _deflect(t)
+        return await _offer(t, "basic_area" if u.question_topic == "area" else "basic_who")
     if intent == "is_bot":
         return await _offer(t, "is_bot")
     return await _unclear(t)
@@ -163,6 +168,12 @@ def _ask_preference(t: Turn) -> Decision:
     t.conv.current_offer = []
     t.conv.awaiting_preference = True
     return Decision(template_key="ask_preference")
+
+
+async def _deflect(t: Turn) -> Decision:
+    """Defer the question to the inspector, never with the same wording twice in a row."""
+    again = t.conv.offer_template == "deflect"
+    return await _offer(t, "deflect_again" if again else "deflect")
 
 
 async def _unclear(t: Turn) -> Decision:

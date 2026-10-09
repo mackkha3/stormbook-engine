@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from booking_engine.calendar.base import Calendar
@@ -84,6 +84,7 @@ class Turn:
     now: datetime
     prev_unclear: int = 0
     prev_none_work: int = 0
+    avoid_date: date | None = None       # booked day the homeowner asked to move away from
 
     @property
     def current(self) -> list[datetime]:
@@ -100,11 +101,12 @@ class Turn:
             self.now + timedelta(minutes=c.min_lead_time_minutes),
             self.now + timedelta(days=c.search_window_days),
         )
-        return eligible(
+        slots = eligible(
             raw, now=self.now, tz=c.tz, min_lead_minutes=c.min_lead_time_minutes,
             window_days=c.search_window_days,
             exclude=set(self.conv.offered_slots) if unoffered_only else None,
         )
+        return [s for s in slots if s.date() != self.avoid_date]
 
     def set_offer(self, key: str, slots: list[datetime], verified: list[datetime]) -> Decision:
         conv = self.conv

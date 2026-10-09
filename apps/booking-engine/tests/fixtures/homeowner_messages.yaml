@@ -11,6 +11,7 @@
 #   slot_choice / preferred_date / preferred_time_window   details it must extract (if listed)
 #   question_topic   for basic_question: who | area | other
 #   acknowledgment_only: true   nothing but "ok" / "thanks"
+#   different_day: true   booked, and asks for another day without naming one
 #   live_not_opt_out: true   wording is ambiguous; live only checks it is NOT read as an opt-out
 #   keyword: true    caught by the code opt-out rule before the model is asked (skipped live)
 #   expect  the template the engine must answer with ("none" = send nothing)
@@ -29,6 +30,11 @@
 - {text: "ok", state: cancelled, intent: affirm, acknowledgment_only: true, expect: none}
 - {text: "thanks", state: cancelled, intent: affirm, acknowledgment_only: true, expect: none}
 - {text: "actually yes lets get it back on the schedule", state: cancelled, intent: affirm, acknowledgment_only: false, expect: offer_slots}
+# Storm or hail damage alone is the core lead, not an emergency, however recent.
+- {text: "yes please, we got hit by the hail last night", state: fresh, intent: affirm, expect: offer_slots}
+- {text: "hail tore up our roof this morning, can someone come look", state: fresh, intent: affirm, expect: offer_slots}
+- {text: "storm last night, think we have damage", state: fresh, intent: affirm, expect: offer_slots}
+- {text: "yes we had some hail damage from the storm last week, want someone to take a look", state: fresh, intent: affirm, expect: offer_slots}
 
 # --- pick_slot ------------------------------------------------------------
 - {text: "1", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
@@ -91,6 +97,7 @@
 - {text: "can we move it", state: booked, intent: reschedule, expect: reschedule}
 - {text: "something came up, need to reschedule", state: booked, intent: reschedule, expect: reschedule}
 - {text: "can we do wednesday instead", state: booked, intent: reschedule, preferred_date: "2026-10-07", expect: propose_time_match}
+- {text: "hey something came up, I need to reschedule to a different day", state: booked, intent: reschedule, different_day: true, expect: reschedule}
 
 # --- cancel (after booking) -----------------------------------------------
 - {text: "can we cancel monday", state: booked, intent: cancel, expect: cancelled}
@@ -108,6 +115,7 @@
 - {text: "tree on my roof", state: fresh, intent: emergency, expect: emergency}
 - {text: "ceiling is dripping bad pls hurry", state: fresh, intent: emergency, expect: emergency}
 - {text: "water won't stop coming in", state: fresh, intent: emergency, expect: emergency}
+- {text: "water is pouring through my ceiling right now", state: fresh, intent: emergency, expect: emergency}
 
 # --- not_interested -------------------------------------------------------
 - {text: "no thanks", state: fresh, intent: not_interested, expect: not_interested}

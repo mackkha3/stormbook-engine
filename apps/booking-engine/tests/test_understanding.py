@@ -299,7 +299,9 @@ async def test_live_model_classifies_fixture(fixture):
         return          # nothing else to extract, and low confidence is a fine way to get here
     if u.intent != "opt_out":
         assert u.confidence >= MIN_CONFIDENCE
-    for key in ("slot_choice", "preferred_time_window", "question_topic", "acknowledgment_only"):
+    for key in (
+        "slot_choice", "preferred_time_window", "question_topic", "acknowledgment_only", "different_day"
+    ):
         if key in fixture:
             assert getattr(u, key) == fixture[key]
     if u.intent != "basic_question":
