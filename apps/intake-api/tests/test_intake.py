@@ -124,3 +124,30 @@ async def test_request_id_header_round_trip(client, httpx_mock):
     assert resp.status_code == 200
     assert resp.headers["X-Request-ID"] == "test-req-id-1234"
     assert resp.json()["request_id"] == "test-req-id-1234"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("extra", "expect_dnd"),
+    [
+        ({}, True),  # a form that predates the checkbox
+        ({"sms_consent": False, "sms_consent_at": "2026-06-13T15:00:00Z"}, True),
+        ({"sms_consent": True, "sms_consent_at": "2026-06-13T15:00:00Z"}, False),
+    ],
+)
+async def test_intake_only_allows_sms_with_consent(client, httpx_mock, extra, expect_dnd):
+    import json
+
+    httpx_mock.add_response(
+        url="https://services.leadconnectorhq.com/contacts/",
+        method="POST",
+        status_code=201,
+        json={"contact": {"id": "ghl_contact_consent"}},
+    )
+    resp = await client.post("/intake", json=dict(VALID_PAYLOAD, **extra))
+    assert resp.status_code == 200
+
+    sent = json.loads(httpx_mock.get_request(method="POST").content)
+    assert ("dndSettings" in sent) is expect_dnd
+    assert ("sms-consent-no" in sent["tags"]) is expect_dnd
+    assert ("sms-consent-yes" in sent["tags"]) is not expect_dnd

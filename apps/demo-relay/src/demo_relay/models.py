@@ -38,6 +38,11 @@ class FireRequest(BaseModel):
     slot_a_time: str = Field(min_length=1, max_length=12)
     slot_b_day: Day
     slot_b_time: str = Field(min_length=1, max_length=12)
+    # A2P: the SMS consent checkbox on the form. Defaults to False so a client
+    # that omits it is treated as not consenting, and /fire refuses to send.
+    sms_consent: bool = False
+    # When the box was ticked, as reported by the browser (ISO 8601).
+    sms_consent_at: str | None = Field(default=None, max_length=40)
 
     @field_validator(
         "contractor_first_name",

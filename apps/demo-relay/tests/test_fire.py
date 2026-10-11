@@ -282,3 +282,53 @@ async def test_scheduler_delay_reads_env(monkeypatch):
     assert scheduler.delay_seconds() == scheduler.DEFAULT_DELAY_SECONDS
     monkeypatch.delenv("MESSAGE_2_DELAY_SECONDS")
     assert scheduler.delay_seconds() == 600
+
+
+# --- SMS consent ---------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("override", [{"sms_consent": False}, None])
+async def test_fire_without_consent_sends_nothing(client, app, httpx_mock, override):
+    payload = dict(FIRE_PAYLOAD)
+    if override is None:
+        # A client that predates the checkbox omits the field entirely.
+        del payload["sms_consent"]
+        del payload["sms_consent_at"]
+    else:
+        payload.update(override)
+
+    resp = await client.post("/fire", json=payload)
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "The demo text requires SMS consent."
+    assert httpx_mock.get_requests() == []
+    assert await app.state.store.get("+19035550199") is None
+
+
+@pytest.mark.asyncio
+async def test_fire_logs_consent_false_with_timestamp(client, caplog):
+    with caplog.at_level(logging.INFO):
+        await client.post("/fire", json=dict(FIRE_PAYLOAD, sms_consent=False))
+
+    record = next(r for r in caplog.records if r.message == "fire_consent")
+    assert record.sms_consent is False
+    assert record.received_at.endswith("Z")
+
+
+@pytest.mark.asyncio
+async def test_fire_records_consent_on_the_conversation(client, app, httpx_mock, caplog):
+    httpx_mock.add_response(
+        url=TWILIO_MESSAGES_URL, method="POST", json={"sid": "SM_consent"}, status_code=201
+    )
+
+    with caplog.at_level(logging.INFO):
+        resp = await client.post("/fire", json=FIRE_PAYLOAD)
+
+    assert resp.status_code == 200
+    stored = await app.state.store.get("+19035550199")
+    assert stored["sms_consent"] is True
+    assert stored["sms_consent_at"] == "2026-10-11T15:00:00.000Z"
+    assert stored["sms_consent_recorded_at"].endswith("Z")
+    record = next(r for r in caplog.records if r.message == "fire_consent")
+    assert record.sms_consent is True

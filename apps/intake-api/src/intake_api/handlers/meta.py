@@ -188,4 +188,7 @@ def _map_meta_lead_to_intake(
         damage_type=damage,  # type: ignore[arg-type]
         photo_count=0,
         submitted_at=submitted_at,
+        # Only an explicit opt-in question on the Meta form counts as consent.
+        sms_consent=first_of("sms_consent").strip().lower() in ("true", "yes", "1"),
+        sms_consent_at=submitted_at,
     )

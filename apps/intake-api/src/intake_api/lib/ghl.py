@@ -28,6 +28,9 @@ GHL_CONTACTS_PATH = "/contacts/"
 GHL_VERSION_HEADER = "2021-07-28"
 GHL_TIMEOUT_SECONDS = 10.0
 
+TAG_SMS_CONSENT_YES = "sms-consent-yes"
+TAG_SMS_CONSENT_NO = "sms-consent-no"
+
 
 def build_contact_payload(
     payload: IntakePayload,
@@ -51,8 +54,18 @@ def build_contact_payload(
     add_cf("damage_type", payload.damage_type)
     add_cf("stormbook_lead_id", stormbook_lead_id)
     add_cf("property_address", payload.address)
+    # Consent record. The timestamp is when the answer was given, whether the
+    # answer was yes or no; both fields are skipped until the client's GHL
+    # location has the custom fields configured.
+    consent_at = payload.sms_consent_at or payload.submitted_at
+    add_cf("sms_consent", "true" if payload.sms_consent else "false")
+    add_cf("sms_consent_at", consent_at.isoformat())
 
-    tags = [f"source-{payload.source}", "roofing-storm"]
+    tags = [
+        f"source-{payload.source}",
+        "roofing-storm",
+        TAG_SMS_CONSENT_YES if payload.sms_consent else TAG_SMS_CONSENT_NO,
+    ]
 
     body: dict[str, Any] = {
         "locationId": client.ghl_location_id,
@@ -66,6 +79,12 @@ def build_contact_payload(
     }
     if payload.email:
         body["email"] = payload.email
+    if not payload.sms_consent:
+        # This service never sends SMS itself — GHL workflows do. Marking the
+        # SMS channel do-not-disturb on the contact is what stops them.
+        body["dndSettings"] = {
+            "SMS": {"status": "active", "message": "No SMS consent given on intake form"}
+        }
     if geocode_result is not None:
         if geocode_result.state:
             body["state"] = geocode_result.state

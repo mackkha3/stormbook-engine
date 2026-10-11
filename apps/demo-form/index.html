@@ -98,6 +98,12 @@
               <p class="error" id="homeowner_phone-error" hidden></p>
             </div>
 
+            <div class="consent">
+              <input id="sms_consent" name="sms_consent" type="checkbox" aria-describedby="sms_consent-error" />
+              <label for="sms_consent">I agree to receive SMS messages from Stormbook about my demo request and appointment scheduling. Message frequency varies. Msg &amp; data rates may apply. Reply STOP to opt out or HELP for help. Consent is not a condition of purchase. See our <a href="https://stormbook.ai/privacy/" target="_blank" rel="noopener">Privacy Policy</a> and <a href="https://stormbook.ai/terms/" target="_blank" rel="noopener">Terms</a>.</label>
+              <p class="error" id="sms_consent-error" role="alert" hidden></p>
+            </div>
+
             <div class="field">
               <label for="homeowner_address">Property address</label>
               <input
@@ -173,6 +179,15 @@
         <button id="fire-another" class="cta cta-secondary" type="button">Fire another</button>
       </section>
     </main>
+
+    <footer class="legal-footer">
+      <span>Stormbook is operated by OTHONAS GROUP LLC</span>
+      <span>
+        <a href="https://stormbook.ai/privacy/" target="_blank" rel="noopener">Privacy Policy</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://stormbook.ai/terms/" target="_blank" rel="noopener">Terms</a>
+      </span>
+    </footer>
 
     <script src="form.js" defer></script>
   </body>

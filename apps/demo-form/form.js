@@ -162,6 +162,10 @@
       });
     });
 
+    document.getElementById("sms_consent").addEventListener("change", function () {
+      clearFieldError("sms_consent");
+    });
+
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       handleSubmit(relay);
@@ -171,6 +175,8 @@
       // Form state is intact underneath — going back is instant mid-call.
       document.getElementById("sent-view").hidden = true;
       document.getElementById("form-view").hidden = false;
+      // Consent is per send — it never carries over to the next fire.
+      document.getElementById("sms_consent").checked = false;
       document.getElementById("homeowner_phone").focus();
     });
 
@@ -267,6 +273,14 @@
       ok = false;
     }
 
+    // Never pre-checked, never required by the browser — but the relay only
+    // texts with consent, so an unchecked box stops here instead of firing.
+    var consent = document.getElementById("sms_consent").checked;
+    if (!consent) {
+      setFieldError("sms_consent", "The demo text requires SMS consent.");
+      ok = false;
+    }
+
     return {
       ok: ok,
       payload: {
@@ -280,6 +294,8 @@
         slot_a_time: value("slot_a_time"),
         slot_b_day: value("slot_b_day"),
         slot_b_time: value("slot_b_time"),
+        sms_consent: consent,
+        sms_consent_at: new Date().toISOString(),
       },
     };
   }

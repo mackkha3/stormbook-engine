@@ -276,3 +276,35 @@ select[aria-invalid="true"] {
     font-size: 24px;
   }
 }
+
+/* SMS consent checkbox */
+.consent {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  row-gap: 6px;
+  align-items: start;
+}
+
+.consent input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  accent-color: var(--primary);
+}
+
+.consent label {
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.consent a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.consent .error {
+  grid-column: 1 / -1;
+}

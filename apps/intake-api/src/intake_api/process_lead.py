@@ -46,6 +46,10 @@ async def process_lead(
             "stormbook_lead_id": stormbook_lead_id,
             "client_id": payload.client_id,
             "source": payload.source,
+            "sms_consent": payload.sms_consent,
+            "sms_consent_at": (
+                payload.sms_consent_at.isoformat() if payload.sms_consent_at else None
+            ),
         },
     )
 

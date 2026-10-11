@@ -32,6 +32,8 @@ def _client() -> ClientConfig:
             "damage_type": "cf_damage",
             "stormbook_lead_id": "cf_sblid",
             "property_address": "cf_addr",
+            "sms_consent": "cf_consent",
+            "sms_consent_at": "cf_consent_at",
         },
         service_area_zips=["75701"],
     )
@@ -88,3 +90,30 @@ def test_build_contact_payload_includes_geocode_when_available():
     )
     assert body["state"] == "TX"
     assert body["postalCode"] == "75701"
+
+
+def test_build_contact_payload_without_consent_blocks_sms():
+    body = build_contact_payload(
+        _payload(), client=_client(), stormbook_lead_id="x", geocode_result=None
+    )
+    assert body["dndSettings"]["SMS"]["status"] == "active"
+    assert "sms-consent-no" in body["tags"]
+    assert "sms-consent-yes" not in body["tags"]
+    by_id = {cf["id"]: cf["value"] for cf in body["customFields"]}
+    assert by_id["cf_consent"] == "false"
+    # No explicit consent timestamp → falls back to the submission time.
+    assert by_id["cf_consent_at"] == "2026-06-13T15:00:00+00:00"
+
+
+def test_build_contact_payload_with_consent_allows_sms():
+    consented_at = datetime(2026, 6, 13, 14, 59, 30, tzinfo=UTC)
+    p = _payload().model_copy(update={"sms_consent": True, "sms_consent_at": consented_at})
+    body = build_contact_payload(
+        p, client=_client(), stormbook_lead_id="x", geocode_result=None
+    )
+    assert "dndSettings" not in body
+    assert "sms-consent-yes" in body["tags"]
+    assert "sms-consent-no" not in body["tags"]
+    by_id = {cf["id"]: cf["value"] for cf in body["customFields"]}
+    assert by_id["cf_consent"] == "true"
+    assert by_id["cf_consent_at"] == "2026-06-13T14:59:30+00:00"

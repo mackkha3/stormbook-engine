@@ -7,7 +7,9 @@
       "homeowner_status":  "cf_homeowner_status_REPLACE",
       "insurance_status":  "cf_insurance_status_REPLACE",
       "inspection_date":   "cf_inspection_date_REPLACE",
-      "property_address":  "cf_property_address_REPLACE"
+      "property_address":  "cf_property_address_REPLACE",
+      "sms_consent":       "cf_sms_consent_REPLACE",
+      "sms_consent_at":    "cf_sms_consent_at_REPLACE"
     },
     "service_area_zips": ["75701", "75702"]
   }

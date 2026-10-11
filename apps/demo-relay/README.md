@@ -31,7 +31,7 @@ costs one re-fire of the form; Twilio's message log is the real audit trail.
 
 | Method | Path | Notes |
 |---|---|---|
-| `POST` | `/fire` | JSON body, see `models.FireRequest`. Returns the message body it sent. |
+| `POST` | `/fire` | JSON body, see `models.FireRequest`. Returns the message body it sent. `403` and no SMS unless `sms_consent` is `true`. |
 | `POST` | `/twilio/inbound` | Twilio's form-urlencoded webhook. Always 200 + empty TwiML. |
 | `GET`  | `/health` | Railway liveness. Includes `active_conversations_count`. |
 
@@ -45,7 +45,7 @@ env var and a Bearer check in `handlers/fire.py` — don't build more than that.
 cd apps/demo-relay
 cp .env.example .env        # then fill in the Twilio values
 uv sync
-uv run pytest -v            # 64 tests, no network
+uv run pytest -v            # 75 tests, no network
 uv run uvicorn demo_relay.main:app --reload --port 3001
 ```
 
@@ -64,7 +64,9 @@ curl -s localhost:3001/fire -H 'Content-Type: application/json' -d '{
   "slot_a_day": "Tuesday",
   "slot_a_time": "10:00 AM",
   "slot_b_day": "Thursday",
-  "slot_b_time": "2:00 PM"
+  "slot_b_time": "2:00 PM",
+  "sms_consent": true,
+  "sms_consent_at": "2026-10-11T15:00:00Z"
 }'
 ```
 
@@ -159,7 +161,7 @@ log after the call. A pre-call test makes this nearly impossible.
 uv run pytest -v
 ```
 
-64 tests, all external calls mocked with `pytest-httpx`. No test touches the
+75 tests, all external calls mocked with `pytest-httpx`. No test touches the
 real Twilio API.
 
 ## What this deliberately doesn't do

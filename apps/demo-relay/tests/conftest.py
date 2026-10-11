@@ -35,6 +35,8 @@ FIRE_PAYLOAD = {
     "slot_a_time": "10:00 AM",
     "slot_b_day": "Thursday",
     "slot_b_time": "2:00 PM",
+    "sms_consent": True,
+    "sms_consent_at": "2026-10-11T15:00:00.000Z",
 }
 
 

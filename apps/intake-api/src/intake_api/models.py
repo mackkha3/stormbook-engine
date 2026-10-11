@@ -27,6 +27,10 @@ class IntakePayload(BaseModel):
     damage_type: DamageType
     photo_count: int = Field(ge=0, le=5)
     submitted_at: datetime
+    # A2P: the SMS consent checkbox. Defaults to False so any source that
+    # doesn't carry it is treated as not consenting (see lib/ghl.py).
+    sms_consent: bool = False
+    sms_consent_at: datetime | None = None
 
 
 class IntakeResponse(BaseModel):

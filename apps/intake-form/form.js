@@ -93,6 +93,9 @@
 
     var companyEl = document.getElementById("brand-company");
     if (companyEl) companyEl.textContent = company;
+    // The consent label names the business that will actually be texting.
+    var consentCompanyEl = document.getElementById("consent-company");
+    if (consentCompanyEl) consentCompanyEl.textContent = company;
     document.title = "Free storm damage inspection — " + company;
 
     if (params.logo) {
@@ -272,6 +275,7 @@
         address: address,
         damage_type: damage,
         photo_count: photos.count,
+        sms_consent: field("sms_consent").checked,
       },
     };
   }
@@ -298,6 +302,8 @@
       address: result.values.address,
       damage_type: result.values.damage_type,
       photo_count: result.values.photo_count,
+      sms_consent: result.values.sms_consent,
+      sms_consent_at: new Date().toISOString(),
       submitted_at: new Date().toISOString(),
     };
 
@@ -306,7 +312,7 @@
 
     submitPayload(payload, config)
       .then(function () {
-        showSuccess(result.values.first_name, result.values.phone);
+        showSuccess(result.values.first_name, result.values.phone, result.values.sms_consent);
       })
       .catch(function (err) {
         console.error("[stormbook-intake] submit failed", err);
@@ -356,15 +362,19 @@
     }
   }
 
-  function showSuccess(firstName, phoneE164) {
+  function showSuccess(firstName, phoneE164, smsConsent) {
     document.getElementById("form-view").hidden = true;
     var body = document.getElementById("success-body");
     var headline = document.getElementById("success-headline");
     headline.textContent = "Got it, " + firstName + "!";
-    body.textContent =
-      "We'll text you within 60 seconds at " +
-      formatPhoneForDisplay(phoneE164) +
-      ". Reply to confirm you're the homeowner.";
+    // No SMS goes out without consent, so don't promise one.
+    body.textContent = smsConsent
+      ? "We'll text you within 60 seconds at " +
+        formatPhoneForDisplay(phoneE164) +
+        ". Reply to confirm you're the homeowner."
+      : "We'll call you at " +
+        formatPhoneForDisplay(phoneE164) +
+        " to schedule your inspection.";
     var success = document.getElementById("success-view");
     success.hidden = false;
     success.scrollIntoView({ behavior: "instant", block: "start" });

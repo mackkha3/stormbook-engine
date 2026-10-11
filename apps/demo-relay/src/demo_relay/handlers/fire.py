@@ -81,6 +81,23 @@ async def fire(payload: FireRequest, request: Request) -> FireResponse:
     _check_token(request, request_id)
 
     conversation_id = str(uuid.uuid4())
+    received_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # A2P: no consent, no SMS. Checked before anything touches Twilio, and
+    # logged either way so every submission has a consent record.
+    log.info(
+        "fire_consent",
+        extra={
+            "request_id": request_id,
+            "conversation_id": conversation_id,
+            "to": payload.homeowner_phone,
+            "sms_consent": payload.sms_consent,
+            "sms_consent_at": payload.sms_consent_at,
+            "received_at": received_at,
+        },
+    )
+    if not payload.sms_consent:
+        raise HTTPException(status_code=403, detail="The demo text requires SMS consent.")
 
     try:
         twilio = TwilioConfig.from_env()
@@ -130,6 +147,7 @@ async def fire(payload: FireRequest, request: Request) -> FireResponse:
         {
             "conversation_id": conversation_id,
             **context,
+            "sms_consent_recorded_at": received_at,
             "message_1_sent_at": sent_at,
             "message_1_sid": message_sid,
             "message_2_scheduled": True,
