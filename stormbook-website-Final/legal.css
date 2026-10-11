@@ -1,0 +1,45 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
+:root{--ink:#090b0e;--yellow:#ffd500;--paper:#f4f1ea;--text:#20242a;--muted:#666b73;--line:rgba(9,11,14,.12)}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--paper);color:var(--text);font-family:"DM Sans",sans-serif;line-height:1.7}.legal-nav{height:92px;background:var(--ink);display:flex;align-items:center;position:sticky;top:0;z-index:10}.shell{width:min(1180px,calc(100% - 48px));margin:auto}.nav-inner{display:flex;align-items:center;justify-content:space-between}.logo{height:38px;width:auto;display:block}.back{color:#fff;text-decoration:none;border:1px solid rgba(255,255,255,.18);padding:10px 17px;border-radius:999px;font-size:14px}.legal-hero{background:var(--ink);color:#fff;padding:82px 0 78px;border-top:1px solid rgba(255,255,255,.07)}.eyebrow{color:var(--yellow);font-size:12px;font-weight:800;letter-spacing:.18em;text-transform:uppercase}.legal-hero h1{font:700 clamp(44px,7vw,82px)/.98 "Space Grotesk",sans-serif;letter-spacing:-.055em;margin:15px 0 18px}.legal-hero p{color:rgba(255,255,255,.6);max-width:700px;margin:0;font-size:17px}.legal-wrap{display:grid;grid-template-columns:260px minmax(0,760px);gap:70px;padding:72px 0 110px}.toc{position:sticky;top:125px;align-self:start}.toc strong{display:block;font-family:"Space Grotesk";margin-bottom:14px}.toc a{display:block;color:#666b73;text-decoration:none;padding:6px 0;font-size:13px}.toc a:hover{color:#8a7200}.legal-copy section{padding:0 0 34px;margin:0 0 34px;border-bottom:1px solid var(--line)}.legal-copy h2{font:700 28px/1.15 "Space Grotesk",sans-serif;letter-spacing:-.03em;margin:0 0 16px;color:var(--ink)}.legal-copy h3{font:700 18px/1.3 "Space Grotesk",sans-serif;margin:22px 0 8px;color:var(--ink)}.legal-copy p{margin:0 0 14px}.legal-copy ul{padding-left:22px;margin:10px 0 16px}.legal-copy li{margin:6px 0}.legal-copy a{color:#806b00}.notice{background:#fff8cc;border:1px solid rgba(255,213,0,.45);border-radius:18px;padding:20px 22px;margin:20px 0}.contact-card{background:var(--ink);color:#fff;border-radius:22px;padding:26px}.contact-card h2{color:#fff}.contact-card a{color:var(--yellow)}footer{background:var(--ink);color:rgba(255,255,255,.55);padding:32px 0}.footer-inner{display:flex;justify-content:space-between;gap:20px;font-size:13px}.footer-inner a{color:#fff;text-decoration:none}@media(max-width:800px){.legal-nav{height:76px}.logo{height:30px}.shell{width:min(100% - 32px,1180px)}.legal-hero{padding:55px 0}.legal-wrap{grid-template-columns:1fr;padding:45px 0 80px}.toc{display:none}.legal-copy h2{font-size:25px}.footer-inner{flex-direction:column}}
+
+/* Refined legal contact panel */
+.legal-copy section.contact-card{
+  position:relative;
+  overflow:hidden;
+  padding:34px 36px 36px;
+  margin-top:8px;
+  border:1px solid rgba(9,11,14,.10);
+  border-bottom:1px solid rgba(9,11,14,.10);
+  border-radius:22px;
+  background:linear-gradient(135deg,#fffdf5 0%,#fff 62%,#fff8cf 100%);
+  color:var(--text);
+  box-shadow:0 16px 44px rgba(9,11,14,.07);
+}
+.legal-copy section.contact-card::before{
+  content:"";
+  position:absolute;
+  top:0;left:0;width:6px;height:100%;
+  background:var(--yellow);
+}
+.contact-card h2{
+  color:var(--ink);
+  font-size:26px;
+  margin:0 0 12px;
+}
+.contact-card p{max-width:620px;margin:0 0 18px;color:var(--muted)}
+.contact-card p:last-child{
+  margin:0;
+  color:var(--ink);
+  line-height:1.85;
+}
+.contact-card strong{font-family:"Space Grotesk",sans-serif;font-size:17px}
+.contact-card a{
+  color:#806b00;
+  font-weight:700;
+  text-decoration:none;
+  border-bottom:1px solid rgba(128,107,0,.3);
+}
+.contact-card a:hover{color:var(--ink);border-color:var(--yellow)}
+@media(max-width:800px){
+  .legal-copy section.contact-card{padding:27px 24px 29px;border-radius:18px}
+  .contact-card h2{font-size:24px}
+}
