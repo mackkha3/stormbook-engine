@@ -289,6 +289,19 @@ async def test_bare_yes_when_booked_with_nothing_pending_still_gets_no_reply(h: 
     assert result.reply is None and len(h.calendar.appointments) == 1
 
 
+async def test_a_late_slot_number_after_booking_gets_no_reply(h: Harness):
+    await h.say("yes", U("affirm"))                           # → slots offered
+    booked = await h.say("Tue works", U("pick_slot", slot_choice=1))
+    assert booked.template_key == "booked"
+    booked_time = h.conv.booked_time
+    result = await h.say("1", U("pick_slot", slot_choice=1))  # sent before the confirmation landed
+    assert result.reply is None and result.template_key is None
+    assert result.handoff_reason is None and h.conv.status == "booked"
+    assert len(h.calendar.appointments) == 1 and len(live_appointments(h)) == 1
+    assert h.conv.booked_time == booked_time and not h.conv.current_offer
+    assert len(h.sent) == 2                                   # the offer and the confirmation
+
+
 async def test_many_reschedules_never_leave_more_than_one_appointment(h: Harness):
     await h.reach("booked")
     for day in (7, 8, 9):

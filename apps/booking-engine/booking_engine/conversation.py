@@ -114,6 +114,14 @@ async def _decide(t: Turn) -> Decision:
             or (intent == "affirm" and not t.has_preference)
         )
         if not answers_offer:
+            if (
+                intent == "pick_slot" and u.slot_choice and not conv.current_offer
+                and not t.has_preference and not u.different_day
+            ):
+                # A number with nothing on the table: a late answer to the offer the
+                # booking already used up ("Tue works", then "1"). Like a bare "yes",
+                # it needs no reply.
+                return Decision()
             if intent in RESCHEDULE_WHEN_BOOKED and (intent != "affirm" or t.has_preference):
                 if t.has_preference:
                     return await _propose(t)
