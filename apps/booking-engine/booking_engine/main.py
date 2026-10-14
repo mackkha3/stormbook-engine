@@ -7,6 +7,7 @@ The inbound webhook's work is in webhook.py.
 
 from __future__ import annotations
 
+import json
 import time
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -30,7 +31,7 @@ from booking_engine.inbound_payload import (
 from booking_engine.logger import configure as configure_logging
 from booking_engine.logger import get
 from booking_engine.settings import Settings
-from booking_engine.store import Store
+from booking_engine.store import OptOutProtected, Store
 from booking_engine.templates import Templates
 from booking_engine.understanding import AnthropicUnderstander
 from booking_engine.webhook import build_runtimes, handle_inbound
@@ -38,6 +39,8 @@ from booking_engine.webhook import build_runtimes, handle_inbound
 configure_logging()
 
 log = get(__name__)
+
+ADMIN_SECRET_HEADER = "X-Admin-Secret"
 
 
 @asynccontextmanager
@@ -106,3 +109,46 @@ async def ghl_inbound(request: Request) -> JSONResponse:
     except GhlError as exc:
         log.error("webhook_failed", extra={"contact_id": inbound.contact_id, "error": str(exc)})
         return JSONResponse({"error": "ghl_unavailable"}, status_code=502)
+
+
+@app.post("/admin/reset-contact")
+async def reset_contact(request: Request) -> JSONResponse:
+    """Forget one contact's conversation so their next text starts fresh (for test contacts).
+
+    `location_id` and `contact_id` come from the query string or a JSON body. Only the
+    engine's own rows are deleted: nothing in GHL changes (an appointment or tags stay),
+    and an opted-out contact is refused.
+    """
+    state = request.app.state
+    provided = request.headers.get(ADMIN_SECRET_HEADER) or request.query_params.get(SECRET_PARAM)
+    if not secret_ok(provided, state.settings.admin_secret):
+        log.warning("admin_rejected", extra={"reason": "bad_secret"})
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    fields = dict(request.query_params)
+    try:
+        body = json.loads(await request.body() or b"{}")
+    except ValueError:
+        body = None
+    if isinstance(body, dict):
+        fields = {**body, **fields}
+    location_id, contact_id = (
+        str(fields.get(name) or "").strip() for name in ("location_id", "contact_id")
+    )
+    if not location_id or not contact_id:
+        return JSONResponse(
+            {"error": "bad_request", "detail": "location_id and contact_id are required"},
+            status_code=422,
+        )
+    runtime = state.runtimes.get(location_id)
+    if runtime is None:
+        return JSONResponse({"error": "unknown_location"}, status_code=404)
+    slug = runtime.client.client_slug
+    try:
+        removed = runtime.engine.store.reset_contact(slug, contact_id)
+    except OptOutProtected:
+        log.warning("contact_reset_refused", extra={"client": slug, "contact_id": contact_id})
+        return JSONResponse({"status": "refused", "reason": "opted_out"}, status_code=409)
+    if removed is None:
+        return JSONResponse({"status": "nothing_to_reset"})
+    log.info("contact_reset", extra={"client": slug, "contact_id": contact_id, **removed})
+    return JSONResponse({"status": "reset", **removed})

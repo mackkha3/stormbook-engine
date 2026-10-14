@@ -65,6 +65,7 @@ Service → Variables. `.env.example` is the template; `.env` is never deployed.
 | `GHL_WEBHOOK_SECRET` | `openssl rand -hex 32`. Required. The same value goes in the GHL webhook URL |
 | `GHL_TOKEN_<CLIENT>` | One per client, named by that client's `ghl_token_env` (e.g. `GHL_TOKEN_ROOF_DEMO`). The Private Integration token |
 | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
+| `ADMIN_SECRET` | `openssl rand -hex 32`. Optional. Unlocks `/admin/reset-contact`; while unset that route rejects everything. Use a different value from `GHL_WEBHOOK_SECRET` |
 | `ENVIRONMENT` | `production` |
 | `LOG_LEVEL` | `INFO` |
 | `DEBOUNCE_SECONDS` | Leave unset (8) |
@@ -122,6 +123,17 @@ curl -s -X POST "https://<engine-host>/webhooks/ghl/inbound?secret=$GHL_WEBHOOK_
   be answered late or, rarely, twice. Deploy when leads are quiet.
 - **Adding a client:** commit their YAML, add their `GHL_TOKEN_<CLIENT>`
   variable, redeploy, then set up their GHL workflows.
+- **Resetting a test contact:** makes the engine forget a contact, so their next
+  text starts a new conversation. It deletes the engine's conversation and turns
+  for that contact only. Nothing in GHL changes: cancel a test appointment and
+  remove the `booked` / `engine-handoff` tags there yourself, and make sure
+  `engine-active` is on. An opted-out contact is refused (409) and stays opted out.
+
+  ```bash
+  curl -s -X POST "https://<engine-host>/admin/reset-contact?secret=$ADMIN_SECRET&location_id=<location>&contact_id=<contact>"
+  # {"status":"reset","previous_status":"booked","appointment_id":"...","booked_time":"...","turns_deleted":3}
+  # {"status":"nothing_to_reset"}   or   409 {"status":"refused","reason":"opted_out"}
+  ```
 - **Rotating the webhook secret:** change `GHL_WEBHOOK_SECRET`, redeploy, then
   update the URL in every client's workflow. Replies are rejected in between.
 - **Rotating a GHL token:** GHL keeps the old token working for 7 days after a

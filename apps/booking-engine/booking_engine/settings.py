@@ -19,6 +19,7 @@ class Settings:
     debounce_seconds: float
     environment: str
     ghl_webhook_secret: str
+    admin_secret: str = ""      # unset = the admin routes reject every request
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -31,6 +32,7 @@ class Settings:
             debounce_seconds=float(os.environ.get("DEBOUNCE_SECONDS", "8")),
             environment=os.environ.get("ENVIRONMENT", "development").strip(),
             ghl_webhook_secret=os.environ.get("GHL_WEBHOOK_SECRET", "").strip(),
+            admin_secret=os.environ.get("ADMIN_SECRET", "").strip(),
         )
 
     def missing_for_server(self) -> list[str]:

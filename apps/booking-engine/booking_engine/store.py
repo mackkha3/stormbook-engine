@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
-from booking_engine.models import Conversation, SeenMessage, Turn
+from booking_engine.models import OPTED_OUT, Conversation, SeenMessage, Turn
+
+
+class OptOutProtected(Exception):
+    """The conversation is an opt-out record and must not be deleted."""
 
 
 class Store:
@@ -59,6 +63,37 @@ class Store:
             merged = session.merge(conversation)
             session.commit()
             return merged
+
+    def reset_contact(self, client_slug: str, contact_id: str) -> dict[str, Any] | None:
+        """Delete one contact's conversation and its turns, so their next text starts fresh.
+
+        Returns what was removed, or None if the contact has no conversation. An
+        opted-out conversation is the record that this number must never be texted
+        again: it is never deleted (raises OptOutProtected). Seen message ids are
+        kept, so a late webhook retry of an old text is still dropped.
+        """
+        with self._sessions() as session:
+            conversation = session.scalar(
+                select(Conversation).where(
+                    Conversation.client_slug == client_slug,
+                    Conversation.contact_id == contact_id,
+                )
+            )
+            if conversation is None:
+                return None
+            if conversation.status == OPTED_OUT:
+                raise OptOutProtected(f"{client_slug}/{contact_id} is opted out")
+            removed = {
+                "previous_status": conversation.status,
+                "appointment_id": conversation.appointment_id,
+                "booked_time": conversation.booked_time,
+            }
+            turns = session.execute(
+                delete(Turn).where(Turn.conversation_id == conversation.id)
+            ).rowcount
+            session.delete(conversation)
+            session.commit()
+            return {**removed, "turns_deleted": turns}
 
     def add_turn(self, conversation_id: int, **fields: Any) -> Turn:
         with self._sessions() as session:
