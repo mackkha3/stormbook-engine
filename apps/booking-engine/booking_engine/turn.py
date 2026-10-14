@@ -85,6 +85,7 @@ class Turn:
     prev_unclear: int = 0
     prev_none_work: int = 0
     avoid_date: date | None = None       # booked day the homeowner asked to move away from
+    after_opener: bool = False           # replying to a GHL opener, not to the engine
 
     @property
     def current(self) -> list[datetime]:

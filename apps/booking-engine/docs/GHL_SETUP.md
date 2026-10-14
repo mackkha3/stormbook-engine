@@ -36,6 +36,7 @@ Create these under **Settings → Tags** so workflows can use them:
 | Tag | Who sets it | Meaning |
 |---|---|---|
 | `engine-active` | **Your first-text workflows** | The engine may answer this contact |
+| `engine-new-opener` | **Your first-text workflows** | A new opener was just sent. The engine removes it |
 | `engine-handoff` | Engine | A human must take over. `engine-active` is removed |
 | `engine-emergency` | Engine | Added with `engine-handoff` for active leaks and similar |
 | `booked` | Engine | Inspection booked |
@@ -50,6 +51,20 @@ stage: the engine moves an existing opportunity, it never creates one.
 
 To hand a contact back to the engine after a handoff, add `engine-active`
 again. The engine resumes on their next text and clears `engine-handoff`.
+
+**Add `engine-new-opener` in the same workflows, before the Send SMS step**, so
+it is already on the contact if they reply instantly. It tells the engine the
+reply answers a new opener, not the old conversation. On that reply:
+
+- opted out: nothing changes and nothing is sent (also filter `engine-opted-out`
+  contacts out of these workflows so the opener itself is never sent),
+- handed off: starts over only if nobody has texted for 24 hours (the engine then
+  clears `engine-handoff`); otherwise it removes `engine-active` again and a person
+  keeps the conversation. A hostile handoff never starts over,
+- booked, inspection still ahead: a "yes" gets "you're still on for…", and they can
+  move it; no second appointment is made,
+- booked in the past, cancelled, or not interested: starts over,
+- still mid-conversation: carries on, but any times on the table are dropped.
 
 ## 3. Calendar
 

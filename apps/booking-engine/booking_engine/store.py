@@ -110,6 +110,13 @@ class Store:
                 )
             )
 
+    def last_turn(self, conversation_id: int) -> Turn | None:
+        with self._sessions() as session:
+            return session.scalar(
+                select(Turn).where(Turn.conversation_id == conversation_id)
+                .order_by(Turn.id.desc()).limit(1)
+            )
+
     def recent_messages(self, conversation_id: int, limit: int = 6) -> list[dict[str, str]]:
         """The last `limit` messages, oldest first, as {role, text}."""
         with self._sessions() as session:

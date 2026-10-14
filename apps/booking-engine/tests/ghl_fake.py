@@ -62,11 +62,21 @@ class FakeGhl:
     def sent(self) -> list[str]:
         return [b["message"] for b in self.bodies("POST", "/conversations/messages")]
 
-    def add_inbound(self, message_id: str, body: str, attachments: list[str] | None = None) -> None:
+    def add_inbound(
+        self, message_id: str, body: str, attachments: list[str] | None = None,
+        at: str | None = None,
+    ) -> None:
         self.messages.append(
             {"id": message_id, "direction": "inbound", "messageType": "TYPE_SMS", "body": body,
              "attachments": attachments or [],
-             "dateAdded": f"2026-10-05T14:{len(self.messages):02d}:00.000Z"}
+             "dateAdded": at or f"2026-10-05T14:{len(self.messages):02d}:00.000Z"}
+        )
+
+    def add_outbound(self, message_id: str, body: str, at: str, kind: str = "TYPE_SMS") -> None:
+        """A text (or call) the business side sent: a GHL opener, a person in the inbox."""
+        self.messages.append(
+            {"id": message_id, "direction": "outbound", "messageType": kind, "body": body,
+             "dateAdded": at}
         )
 
     # --- the API -------------------------------------------------------------

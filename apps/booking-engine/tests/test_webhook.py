@@ -33,11 +33,12 @@ class Site:
         self.client = live_client()
         self.store = Store(init_db(make_engine("sqlite:///:memory:")))
         self.understander = ScriptedUnderstander()
+        self.now = NOW
         gateway = GhlGateway(self.ghl.client, self.client)
         self.engine = Engine(
             client=self.client, templates=Templates.load(), store=self.store,
             understander=self.understander, calendar=GhlCalendar(self.ghl.client, self.client),
-            gateway=gateway, debounce_seconds=0.0, clock=lambda: NOW,
+            gateway=gateway, debounce_seconds=0.0, clock=lambda: self.now,
         )
         state = main.app.state
         state.settings = Settings(
@@ -56,12 +57,14 @@ class Site:
         await self.engine.debouncer.drain()
         return response
 
-    async def text(self, body: str, understanding=None, **extra) -> httpx.Response:
+    async def text(
+        self, body: str, understanding=None, *, at: str | None = None, **extra
+    ) -> httpx.Response:
         """One homeowner SMS arriving the way the GHL workflow delivers it."""
         if understanding is not None:
             self.understander.queue.append(understanding)
         self._ids += 1
-        self.ghl.add_inbound(f"m-{self._ids}", body)
+        self.ghl.add_inbound(f"m-{self._ids}", body, at=at)
         payload = {"location_id": LOCATION, "contact_id": "c1", "contact_phone": "+19035550199",
                    "message_body": body, **extra}
         return await self.post(payload)

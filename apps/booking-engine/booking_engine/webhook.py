@@ -11,7 +11,10 @@ reply here. This module turns that into `engine.receive(...)`:
    ignored. If the tag is back on a handed-off contact, a human has returned
    the conversation to the engine and it resumes,
 5. on a contact's first reply, the opening text GHL sent is read from the GHL
-   conversation so the model knows what is being answered.
+   conversation so the model knows what is being answered,
+6. with the `engine-new-opener` tag, GHL has just sent an existing contact a new
+   opener: the conversation starts over or carries on according to its state
+   (conversation.apply_new_opener), and the tag is removed.
 
 Payload parsing lives in inbound_payload.py. When a payload carries no usable
 message text, the text is read back from the GHL conversation instead.
@@ -23,7 +26,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -31,7 +34,12 @@ import httpx
 from booking_engine import gateway as gw
 from booking_engine.calendar.ghl import GhlCalendar
 from booking_engine.config_loader import ClientConfig
-from booking_engine.conversation import DEFAULT_LEAD_SOURCE, LEAD_SOURCES
+from booking_engine.conversation import (
+    DEFAULT_LEAD_SOURCE,
+    LEAD_SOURCES,
+    OPENER_FRESH,
+    OPENER_STAYS_HANDED_OFF,
+)
 from booking_engine.engine import Engine
 from booking_engine.ghl_client import GhlClient, GhlError
 from booking_engine.inbound_payload import Inbound
@@ -86,12 +94,39 @@ def newest_inbound(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
     return None
 
 
-def find_opening_text(messages: list[dict[str, Any]]) -> str | None:
+def find_opening(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
     """The last text the business sent: on a first reply, that is GHL's opening message."""
     for message in reversed(messages):
         if message.get("direction") == "outbound" and _is_sms(message) and _text(message):
-            return _text(message)
+            return message
     return None
+
+
+def find_opening_text(messages: list[dict[str, Any]]) -> str | None:
+    opening = find_opening(messages)
+    return _text(opening) if opening else None
+
+
+def _sent_at(message: dict[str, Any]) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(message.get("dateAdded")))
+    except ValueError:
+        return None
+
+
+def quiet_before(messages: list[dict[str, Any]], opening: dict[str, Any]) -> timedelta | None:
+    """How long the conversation had no texts before `opening`. None if it can't be told.
+
+    Every text counts, including a person's from the GHL inbox: those never reach the
+    engine. Calls do not, so the missed call that triggered the opener is no texting.
+    """
+    earlier = [m for m in messages[: messages.index(opening)] if _is_sms(m)]
+    if not earlier:
+        return timedelta.max
+    opened, last = _sent_at(opening), _sent_at(earlier[-1])
+    if opened is None or last is None:
+        return None
+    return opened - last
 
 
 def _fallback_message_id(inbound: Inbound) -> str:
@@ -184,15 +219,16 @@ async def handle_inbound(runtimes: dict[str, ClientRuntime], inbound: Inbound) -
             inbound, message_id=str(matched.get("id") or "") or None, body=_text(matched)
         )
 
+    new_opener = gw.TAG_ACTIVE in tags and gw.TAG_NEW_OPENER in tags
     if gw.TAG_ACTIVE not in tags:
         # Not ours to answer. An opt-out keyword is still recorded for a contact we know.
         if conv is None or not keyword_opt_out([inbound.body]):
             return _ignored("not_engine_active", inbound)
-    elif conv is not None and conv.status == HANDOFF:
+    elif conv is not None and conv.status == HANDOFF and not new_opener:
         await _reactivate(rt, conv)
 
-    message_id, opening_text = inbound.message_id, None
-    if conv is None or message_id is None:
+    message_id, opening = inbound.message_id, None
+    if conv is None or message_id is None or new_opener:
         if messages is None:
             try:
                 messages = await rt.ghl.recent_messages(inbound.contact_id)
@@ -201,23 +237,29 @@ async def handle_inbound(runtimes: dict[str, ClientRuntime], inbound: Inbound) -
                 messages = []
         matched = matched or find_message(messages, inbound.body)
         message_id = message_id or (matched and str(matched.get("id") or "")) or None
-        if conv is None:
-            opening_text = find_opening_text(messages)
+        if conv is None or new_opener:
+            opening = find_opening(messages)
 
     name = str(contact.get("name") or "").strip() or " ".join(
         str(contact.get(k) or "").strip() for k in ("firstName", "lastName")
     ).strip()
-    accepted = rt.engine.receive(
-        Contact(
-            contact_id=inbound.contact_id,
-            phone=str(contact.get("phone") or inbound.phone),
-            name=name or inbound.name,
-            lead_source=(
-                inbound.lead_source if inbound.lead_source in LEAD_SOURCES
-                else DEFAULT_LEAD_SOURCE
-            ),
-            opening_text=opening_text,
+    person = Contact(
+        contact_id=inbound.contact_id,
+        phone=str(contact.get("phone") or inbound.phone),
+        name=name or inbound.name,
+        lead_source=(
+            inbound.lead_source if inbound.lead_source in LEAD_SOURCES else DEFAULT_LEAD_SOURCE
         ),
+        opening_text=_text(opening) if opening else None,
+    )
+    outcome = None
+    if new_opener:
+        outcome = await _new_opener(rt, conv, person, messages or [], opening)
+        if outcome == OPENER_STAYS_HANDED_OFF and not keyword_opt_out([inbound.body]):
+            return _ignored("handoff_not_reopened", inbound)
+
+    accepted = rt.engine.receive(
+        person,
         InboundMessage(
             message_id=message_id or _fallback_message_id(inbound),
             body=inbound.body, timestamp=inbound.timestamp,
@@ -226,6 +268,45 @@ async def handle_inbound(runtimes: dict[str, ClientRuntime], inbound: Inbound) -
     )
     if not accepted:
         return {"status": "duplicate"}
-    if conv is None:
+    if conv is None or outcome == OPENER_FRESH:
         await rt.gateway.set_stage(inbound.contact_id, "replied")     # their first reply
     return {"status": "accepted"}
+
+
+async def _new_opener(
+    rt: ClientRuntime, conv: Conversation | None, person: Contact,
+    messages: list[dict[str, Any]], opening: dict[str, Any] | None,
+) -> str | None:
+    """Apply a new GHL opener once, then take the `engine-new-opener` tag off.
+
+    Returns the outcome (conversation.OPENER_*), or None when there was nothing to
+    apply: no conversation yet (the opener is seeded as on any first reply), the
+    opener was already applied (a second text of a burst, or the tag could not be
+    removed last time), or it cannot be found in GHL (the tag stays, for next time).
+    """
+    store, slug = rt.engine.store, rt.client.client_slug
+    if opening is None:
+        log.warning("new_opener_not_found", extra={"contact_id": person.contact_id})
+        return None
+    if conv is not None and any(
+        m["role"] == "engine" and m["text"] == _text(opening)
+        for m in store.recent_messages(conv.id)
+    ):
+        opening = None       # the newest outbound is the engine's own reply, not an opener
+    opener_id = opening and str(opening.get("id") or opening.get("dateAdded") or "")
+    # Recorded like an inbound message id: applied once, even with two webhooks racing.
+    first_time = bool(opener_id) and store.register_inbound(slug, f"opener:{opener_id}")
+    outcome = None
+    if conv is not None and first_time:
+        outcome = rt.engine.new_opener(conv, person, quiet_for=quiet_before(messages, opening))
+    remove = [gw.TAG_NEW_OPENER]
+    if outcome == OPENER_FRESH:
+        # The old outcome no longer describes them; the next handoff alerts again.
+        remove += [gw.TAG_HANDOFF, gw.TAG_EMERGENCY, gw.TAG_CANCELLED]
+    elif outcome == OPENER_STAYS_HANDED_OFF:
+        remove += [gw.TAG_ACTIVE]    # the opener workflow re-added it; a person still owns this
+    try:
+        await rt.gateway.remove_tags(person.contact_id, remove)
+    except GhlError as exc:
+        log.error("new_opener_tag_not_removed", extra={"error": str(exc)})
+    return outcome

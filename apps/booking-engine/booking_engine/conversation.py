@@ -11,7 +11,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from booking_engine.calendar.base import CalendarError, SlotUnavailable
-from booking_engine.models import ACTIVE, BOOKED, CANCELLED, CLOSED, OPTED_OUT
+from booking_engine.models import (
+    ACTIVE,
+    BOOKED,
+    CANCELLED,
+    CLOSED,
+    HANDOFF,
+    OPTED_OUT,
+    SLOTS_OFFERED,
+    Conversation,
+)
 from booking_engine.slots import (
     closest,
     from_key,
@@ -26,7 +35,7 @@ REQUIRED_TEMPLATES = {
     "offer_slots", "offer_more_slots", "ask_preference", "propose_time_match",
     "propose_time_no_match", "booked", "deflect", "deflect_again", "basic_who", "basic_area", "is_bot",
     "which_one", "clarify", "reschedule", "cancelled", "handoff", "emergency", "not_interested",
-    "no_slots_available", "photo_received", "photo_received_booked",
+    "no_slots_available", "photo_received", "photo_received_booked", "still_booked",
 }
 # Opening texts GHL sends, one per lead source (templates.yaml: opening_<lead_source>).
 # Never sent by the engine; used to seed a new conversation's history.
@@ -36,6 +45,65 @@ REQUIRED_TEMPLATES |= {f"opening_{source}" for source in LEAD_SOURCES}
 
 REOPEN_INTENTS = ("affirm", "propose_time", "pick_slot", "none_work")
 RESCHEDULE_WHEN_BOOKED = ("reschedule", "propose_time", "pick_slot", "none_work", "affirm")
+
+# A new GHL opener reopens a handed-off conversation only after this long without a
+# text, so it never cuts in while a person is still talking to the homeowner.
+HANDOFF_QUIET = timedelta(hours=24)
+NEVER_REOPENED_HANDOFFS = ("hostile",)
+
+# What a new opener did to an existing conversation (see apply_new_opener).
+OPENER_OPTED_OUT = "opted_out"
+OPENER_STAYS_HANDED_OFF = "stays_handed_off"
+OPENER_FRESH = "fresh"
+OPENER_KEPT = "kept"
+
+
+def apply_new_opener(conv: Conversation, *, now: datetime, quiet_for: timedelta | None) -> str:
+    """GHL sent this contact a new opening text. Update the conversation; say what was done.
+
+    `quiet_for` is how long the conversation had no texts before the opener (None if
+    unknown). Opted out is final. A handoff reopens only after HANDOFF_QUIET, and a
+    hostile one never. A finished conversation (closed, cancelled, a past appointment,
+    a reopened handoff) starts over, keeping an appointment that is still ahead. One
+    still in progress, or booked ahead, keeps its state, but whatever was on the table
+    is stale: a "yes" now answers the opener, not an old offer.
+    """
+    if conv.status == OPTED_OUT:
+        return OPENER_OPTED_OUT
+    if conv.status == HANDOFF and (
+        conv.handoff_reason in NEVER_REOPENED_HANDOFFS
+        or quiet_for is None or quiet_for < HANDOFF_QUIET
+    ):
+        return OPENER_STAYS_HANDED_OFF
+    ahead = _appointment_ahead(conv, now)
+    if conv.status in (HANDOFF, CLOSED, CANCELLED) or (conv.status == BOOKED and not ahead):
+        _start_over(conv, keep_appointment=ahead)
+        return OPENER_FRESH
+    conv.current_offer = []
+    conv.offer_template = None
+    conv.awaiting_preference = False
+    if conv.status == SLOTS_OFFERED:
+        conv.status = ACTIVE
+    return OPENER_KEPT
+
+
+def _appointment_ahead(conv: Conversation, now: datetime) -> bool:
+    return (
+        conv.appointment_id is not None and conv.booked_time is not None
+        and from_key(conv.booked_time, now.tzinfo) > now
+    )
+
+
+def _start_over(conv: Conversation, *, keep_appointment: bool) -> None:
+    if not keep_appointment:
+        conv.appointment_id = conv.booked_time = None
+    conv.status = BOOKED if keep_appointment else ACTIVE
+    conv.handoff_reason = None
+    conv.current_offer = []
+    conv.offered_slots = []          # old times, mostly past; fair to offer again
+    conv.offer_template = None
+    conv.awaiting_preference = False
+    conv.unclear_streak = conv.none_work_streak = conv.engine_message_count = 0
 
 
 async def decide(t: Turn) -> Decision:
@@ -131,6 +199,9 @@ async def _decide(t: Turn) -> Decision:
                     return _ask_preference(t)
                 return await _offer(t, "reschedule", fresh=True)
             if intent == "affirm":
+                if t.after_opener:
+                    # "Yes" to a new opener while still booked: remind them, don't go quiet.
+                    return _still_booked(t)
                 return Decision()    # "ok thanks" after the confirmation needs no reply
             if not conv.current_offer:
                 return handoff(f"{intent}_after_booking")
@@ -163,6 +234,11 @@ async def _decide(t: Turn) -> Decision:
     if intent == "is_bot":
         return await _offer(t, "is_bot")
     return await _unclear(t)
+
+
+def _still_booked(t: Turn) -> Decision:
+    booked = from_key(t.conv.booked_time, t.client.tz)
+    return Decision(template_key="still_booked", booked_time=booked, verified=[booked])
 
 
 def _second_none_work(t: Turn) -> bool:

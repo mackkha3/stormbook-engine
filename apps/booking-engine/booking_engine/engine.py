@@ -10,7 +10,7 @@ check, and "when anything goes wrong, hand off".
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from booking_engine import gateway as gw
@@ -19,7 +19,10 @@ from booking_engine.config_loader import ClientConfig, ConfigError
 from booking_engine.conversation import (
     DEFAULT_LEAD_SOURCE,
     LEAD_SOURCES,
+    OPENER_FRESH,
+    OPENER_KEPT,
     REQUIRED_TEMPLATES,
+    apply_new_opener,
     decide,
     decide_photo,
 )
@@ -51,6 +54,7 @@ log = get(__name__)
 MAX_ENGINE_MESSAGES = 8      # without a booking; the next reply becomes a handoff
 NOTE_MESSAGES = 6
 PHOTO_TEXT = "[photo]"       # stands in for a picture-only text in history, notes and logs
+OPENING_PREFIX = "opening_"   # template_key of a seeded opener turn: opening_<source|from_ghl>
 PHOTO_NOTE = (
     "Booking engine: the homeowner sent a photo by text. It is in their GHL conversation."
 )
@@ -146,17 +150,47 @@ class Engine:
             self.client.client_slug, contact.contact_id, contact.phone, contact.name
         )
         if created:
-            key, text = self.opening_message(contact)
-            self.store.add_turn(
-                conv.id, inbound_text="", inbound_message_ids=[], template_key=key,
-                outbound_text=text, status_after=conv.status,
-            )
+            key, text = self._seed_opening(conv, contact)
             log.info(
                 "conversation_opened",
                 extra={"client": self.client.client_slug, "contact_id": contact.contact_id,
                        "lead_source": contact.lead_source, "opening": key, "opening_text": text},
             )
         return conv
+
+    def new_opener(
+        self, conv: Conversation, contact: Contact, *, quiet_for: timedelta | None
+    ) -> str:
+        """GHL sent an existing contact a new opening text. Returns the outcome
+        (conversation.OPENER_*); when the conversation goes on, the opener is added
+        to its history like a first opener, so the model knows what is being answered."""
+        now = self._clock().astimezone(self.client.tz)
+        previous = conv.status
+        outcome = apply_new_opener(conv, now=now, quiet_for=quiet_for)
+        if outcome in (OPENER_FRESH, OPENER_KEPT):
+            self.store.save(conv)
+            self._seed_opening(conv, contact)
+        log.info(
+            "new_opener",
+            extra={"client": self.client.client_slug, "contact_id": conv.contact_id,
+                   "outcome": outcome, "previous_status": previous, "status": conv.status},
+        )
+        return outcome
+
+    def _seed_opening(self, conv: Conversation, contact: Contact) -> tuple[str, str]:
+        key, text = self.opening_message(contact)
+        self.store.add_turn(
+            conv.id, inbound_text="", inbound_message_ids=[], template_key=key,
+            outbound_text=text, status_after=conv.status,
+        )
+        return key, text
+
+    def _after_opener(self, conv: Conversation) -> bool:
+        """True if the last thing in the conversation is an opener (seeded, never sent)."""
+        last = self.store.last_turn(conv.id)
+        return last is not None and not last.inbound_text and bool(
+            last.template_key and last.template_key.startswith(OPENING_PREFIX)
+        )
 
     def opening_message(self, contact: Contact) -> tuple[str, str]:
         """(source key, text) of the opening message this contact was sent.
@@ -165,11 +199,11 @@ class Engine:
         conversation as `contact.opening_text`; the configured text is the fallback.
         """
         if contact.opening_text and contact.opening_text.strip():
-            return "opening_from_ghl", contact.opening_text.strip()
+            return f"{OPENING_PREFIX}from_ghl", contact.opening_text.strip()
         source = contact.lead_source if contact.lead_source in LEAD_SOURCES else DEFAULT_LEAD_SOURCE
         if source != contact.lead_source:
             log.warning("unknown_lead_source", extra={"lead_source": contact.lead_source})
-        key = f"opening_{source}"
+        key = f"{OPENING_PREFIX}{source}"
         return key, self.templates.render(key, {"company_name": self.client.company_name}).text
 
     async def _run(
@@ -178,6 +212,7 @@ class Engine:
         tz = self.client.tz
         now = self._clock().astimezone(tz)
         history = self.store.recent_messages(conv.id, NOTE_MESSAGES)
+        after_opener = self._after_opener(conv)
 
         # An opt-out keyword is honoured in every state, even after a handoff or a close.
         opt_out = keyword_opt_out(bodies)
@@ -193,7 +228,8 @@ class Engine:
             result.intent = "photo"
             decision = await decide_photo(
                 Turn(conv=conv, u=None, text=text, client=self.client,
-                     calendar=self.calendar, templates=self.templates, now=now)
+                     calendar=self.calendar, templates=self.templates, now=now,
+                     after_opener=after_opener)
             )
         else:
             try:
@@ -220,7 +256,8 @@ class Engine:
             if decision is None:
                 decision = await decide(
                     Turn(conv=conv, u=u, text=text, client=self.client,
-                         calendar=self.calendar, templates=self.templates, now=now)
+                         calendar=self.calendar, templates=self.templates, now=now,
+                         after_opener=after_opener)
                 )
 
         if (
