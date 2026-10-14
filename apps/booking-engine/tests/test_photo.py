@@ -16,7 +16,7 @@ async def test_a_photo_with_no_words_gets_the_photo_template_with_two_real_slots
     assert result.template_key == "photo_received" and result.intent == "photo"
     assert h.sent == [(
         "Thanks for the photo. Your inspector will take a look in person. "
-        "Would Monday at 11 AM or Tuesday at noon work?"
+        "Would today at 11 AM or tomorrow at noon work?"
     )]
     assert h.understander.contexts == []                  # the model was never asked
     assert h.gateway.notes() == [PHOTO_NOTE]

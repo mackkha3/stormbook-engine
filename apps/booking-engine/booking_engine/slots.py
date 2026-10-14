@@ -36,14 +36,16 @@ def format_slot(dt: datetime, tz: ZoneInfo) -> str:
 
 
 def friendly_slot(dt: datetime, tz: ZoneInfo, now: datetime) -> str:
-    """How a slot reads in a text to the homeowner: `Wednesday at 8 AM`, `Thursday at noon`.
+    """How a slot reads in a text to the homeowner: `today at 3 PM`, `tomorrow at noon`,
+    `Wednesday at 8 AM`.
 
     The date is added (`Wednesday 10/14 at 8 AM`) only when the slot is more than
     6 days after `now`. `format_slot` stays the dated form for notes, logs and the model.
     """
     local = dt.astimezone(tz)
-    day = _WEEKDAYS[local.weekday()]
-    if (local.date() - now.astimezone(tz).date()).days > WEEKDAY_ONLY_DAYS:
+    days_out = (local.date() - now.astimezone(tz).date()).days
+    day = {0: "today", 1: "tomorrow"}.get(days_out, _WEEKDAYS[local.weekday()])
+    if days_out > WEEKDAY_ONLY_DAYS:
         day = f"{day} {local.month}/{local.day}"
     if (local.hour, local.minute) == (12, 0):
         return f"{day} at noon"

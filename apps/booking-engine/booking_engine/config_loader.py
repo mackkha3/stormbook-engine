@@ -17,6 +17,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from booking_engine.settings import CONFIG_DIR, env_is_set
 
+DEFAULT_MIN_LEAD_MINUTES = 180     # never offer a slot sooner than 3 hours out
+
 
 class ConfigError(Exception):
     """A client config is missing, malformed, or not ready to go live."""
@@ -45,7 +47,7 @@ class ClientConfig(BaseModel):
     timezone: str
     inspection_duration_minutes: int = Field(default=60, gt=0, le=480)
     slots_offered: int = Field(default=2, ge=1, le=5)
-    min_lead_time_minutes: int = Field(ge=0)
+    min_lead_time_minutes: int = Field(default=DEFAULT_MIN_LEAD_MINUTES, ge=0)
     search_window_days: int = Field(ge=1, le=60)
     service_area_text: str = Field(min_length=1)
     handoff_notify: list[str] = Field(min_length=1)

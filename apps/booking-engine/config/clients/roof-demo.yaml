@@ -16,7 +16,7 @@ stage_ids:
 timezone: "America/Chicago"
 inspection_duration_minutes: 60        # default 60, configurable per client
 slots_offered: 2                       # how many times to offer at once
-min_lead_time_minutes: 120             # never offer a slot sooner than this
+min_lead_time_minutes: 180             # never offer a slot sooner than this (default 180)
 search_window_days: 7                  # how far ahead to look for slots
 service_area_text: "Tyler and the surrounding East Texas area"
 handoff_notify: ["roofer"]             # handoff alerts go through GHL

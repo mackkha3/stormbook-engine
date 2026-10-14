@@ -61,6 +61,11 @@ class RenderedMessage:
     variables: dict[str, str] = field(default_factory=dict)
 
 
+def _capitalize(text: str) -> str:
+    """A message can open with a variable ("{slot_1} is open"); it still starts a sentence."""
+    return text[:1].upper() + text[1:]
+
+
 def static_violation(text: str) -> str | None:
     """Dollar amounts and banned phrases — checks that need no calendar context."""
     if _DOLLAR.search(text):
@@ -130,7 +135,9 @@ class Templates:
         if missing:
             raise TemplateError(f"template {key!r} is missing values for {missing}")
         used = {n: str(variables[n]) for n in needed}
-        return RenderedMessage(key=key, text=self._templates[key].format(**used), variables=used)
+        return RenderedMessage(
+            key=key, text=_capitalize(self._templates[key].format(**used)), variables=used
+        )
 
     def check_output(self, message: RenderedMessage, allowed_times: list[str]) -> None:
         """Raise UnsafeOutput unless `message` is safe to send.
@@ -157,6 +164,7 @@ class Templates:
         # wording, which must not carry a date or time of its own.
         remainder = message.text
         for value in sorted(set(message.variables.values()), key=len, reverse=True):
-            remainder = remainder.replace(value, " ")
+            # A value that opens the message was capitalised ("Today at 3 PM is open").
+            remainder = remainder.replace(value, " ").replace(_capitalize(value), " ")
         if _TIME_LIKE.search(remainder):
             raise UnsafeOutput("time_not_from_calendar")

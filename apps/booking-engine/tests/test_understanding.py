@@ -341,7 +341,7 @@ def _unnumbered_offer_context(text: str) -> TurnContext:
 
 def test_unnumbered_offer_context_shows_the_wording_the_homeowner_read():
     content = build_user_content(_unnumbered_offer_context("Wednesday"))
-    assert "engine: Great, I've got Wednesday at 8 AM or Thursday at noon. Which works better?" in content
+    assert "engine: Great, I've got tomorrow at 8 AM or Thursday at noon. Which works better?" in content
     assert "1. Wed 10/14 at 8:00 AM" in content and "2. Thu 10/15 at 12:00 PM" in content
 
 

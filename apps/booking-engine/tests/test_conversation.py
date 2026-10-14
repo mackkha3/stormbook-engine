@@ -141,12 +141,12 @@ async def test_bare_yes_to_two_options_asks_which_one(h: Harness):
     result = await h.say("yes", U("affirm"))
     assert result.template_key == "which_one" and not h.calendar.appointments
     assert result.reply == (
-        "Sure thing. Which one's better for you, Monday at 11 AM or Tuesday at noon?"
+        "Sure thing. Which one's better for you, today at 11 AM or tomorrow at noon?"
     )
     assert h.conv.unclear_streak == 0 and h.conv.status == "slots_offered"
     # Same two slots stay on the table, so "2" still books the second one.
     booked = await h.say("2", U("pick_slot", slot_choice=2))
-    assert booked.template_key == "booked" and "Tuesday at noon" in booked.reply
+    assert booked.template_key == "booked" and "tomorrow at noon" in booked.reply
 
 
 async def test_max_eight_messages_without_booking_then_handoff(h: Harness):
@@ -297,7 +297,7 @@ async def test_other_topic_defers_to_the_inspector_with_two_slots(h: Harness):
     result = await h.say("what are your hours", U("basic_question", question_topic="other"))
     assert result.reply == (
         "Good question. Your inspector will go over that with you in person, since it depends on "
-        "what they find. Would Monday at 11 AM or Tuesday at noon work better?"
+        "what they find. Would today at 11 AM or tomorrow at noon work better?"
     )
     assert len(h.conv.current_offer) == 2
 
@@ -607,5 +607,5 @@ async def test_two_questions_in_a_row_get_different_deflect_wording(h: Harness):
     assert [r.template_key for r in (first, second, third)] == ["deflect", "deflect_again", "deflect"]
     assert first.reply != second.reply and second.reply != third.reply
     # The same two times stay on the table throughout.
-    assert all("Monday at 11 AM" in r.reply and "Tuesday at noon" in r.reply
+    assert all("today at 11 AM" in r.reply and "tomorrow at noon" in r.reply
                for r in (first, second, third))

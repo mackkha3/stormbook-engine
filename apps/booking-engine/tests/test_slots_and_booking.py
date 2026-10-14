@@ -30,8 +30,15 @@ def test_homeowner_facing_slot_wording():
     """Weekday and a plain time; the date only when the slot is more than 6 days out."""
     assert friendly_slot(at(7, 8), TZ, NOW) == "Wednesday at 8 AM"
     assert friendly_slot(at(8, 12), TZ, NOW) == "Thursday at noon"
-    assert friendly_slot(datetime(2026, 10, 6, 15, 30, tzinfo=TZ), TZ, NOW) == "Tuesday at 3:30 PM"
-    assert friendly_slot(datetime(2026, 10, 6, 15, 0, tzinfo=dt.UTC), TZ, NOW) == "Tuesday at 10 AM"
+    assert friendly_slot(datetime(2026, 10, 6, 15, 30, tzinfo=TZ), TZ, NOW) == "tomorrow at 3:30 PM"
+    assert friendly_slot(datetime(2026, 10, 6, 15, 0, tzinfo=dt.UTC), TZ, NOW) == "tomorrow at 10 AM"
+    assert friendly_slot(at(5, 15), TZ, NOW) == "today at 3 PM"
+    assert friendly_slot(at(5, 12), TZ, NOW) == "today at noon"
+    # Calendar days in the client's timezone, not 24-hour spans: 11 PM → 8 AM is tomorrow.
+    assert friendly_slot(at(6, 8), TZ, NOW.replace(hour=23)) == "tomorrow at 8 AM"
+    assert friendly_slot(at(7, 8), TZ, NOW.replace(hour=23)) == "Wednesday at 8 AM"
+    # Midnight UTC is still "today" in Chicago.
+    assert friendly_slot(datetime(2026, 10, 6, 1, 0, tzinfo=dt.UTC), TZ, NOW) == "today at 8 PM"
     assert friendly_slot(at(11, 9), TZ, NOW) == "Sunday at 9 AM"             # 6 days out
     assert friendly_slot(at(12, 9), TZ, NOW) == "Monday 10/12 at 9 AM"       # 7 days out
     assert friendly_slot(at(12, 12), TZ, NOW) == "Monday 10/12 at noon"
@@ -71,10 +78,43 @@ async def test_only_calendar_slots_are_offered_inside_lead_time_and_window(h: Ha
     result = await h.say("yes", U("affirm"))
     slots = offer(h)
     assert slots == [SLOT_1, SLOT_2]
-    assert result.reply.startswith("Great, I've got Monday at 11 AM or Tuesday at noon.")
+    assert result.reply.startswith("Great, I've got today at 11 AM or tomorrow at noon.")
     free = await h.calendar.free_slots(NOW, NOW + timedelta(days=7))
     assert all(s in free and NOW + timedelta(minutes=120) <= s <= NOW + timedelta(days=7)
                for s in slots)
+
+
+def test_min_lead_time_defaults_to_three_hours_and_the_demo_client_uses_it():
+    from booking_engine.config_loader import DEFAULT_MIN_LEAD_MINUTES, ClientConfig, load_client
+
+    demo = load_client("roof-demo")
+    assert DEFAULT_MIN_LEAD_MINUTES == 180 and demo.min_lead_time_minutes == 180
+    unset = demo.model_dump(exclude={"min_lead_time_minutes"})
+    assert ClientConfig.model_validate(unset).min_lead_time_minutes == 180
+
+
+@pytest.mark.parametrize(
+    "now, first",
+    [
+        (NOW, at(5, 12)),                                   # 9:00 → 11 AM is 2h out; noon is 3h
+        (NOW + timedelta(minutes=1), at(5, 13)),            # 9:01 → noon is 2h59m out
+    ],
+)
+async def test_a_three_hour_lead_never_offers_a_slot_sooner(now, first):
+    h = Harness(min_lead_time_minutes=180)
+    h.now = now
+    result = await h.say("yes", U("affirm"))
+    assert offer(h)[0] == first and all(s >= now + timedelta(hours=3) for s in offer(h))
+    assert result.reply.startswith(f"Great, I've got {friendly_slot(first, TZ, now)} or")
+
+
+async def test_a_message_that_opens_with_today_is_capitalised_and_still_passes_the_check(
+    h: Harness,
+):
+    result = await h.say("anything this afternoon?", U("propose_time", preferred_date=NOW.date(),
+                                                       preferred_time_window="afternoon"))
+    assert result.template_key == "propose_time_match"
+    assert result.reply.startswith("Today at 2 PM is open.")
 
 
 async def test_taken_slots_are_never_offered(h: Harness):
@@ -113,7 +153,7 @@ async def test_propose_time_offers_matches_inside_the_requested_window(h: Harnes
         "propose_time", preferred_date=dt.date(2026, 10, 6), preferred_time_window="after 15:00"))
     assert result.template_key == "propose_time_match"
     assert offer(h) == [at(6, 15), at(6, 16)]
-    assert result.reply.startswith("Tuesday at 3 PM is open.")
+    assert result.reply.startswith("Tomorrow at 3 PM is open.")
 
 
 async def test_propose_time_with_nothing_open_offers_the_closest_openings(h: Harness):
@@ -133,7 +173,7 @@ async def test_booking_creates_a_60_minute_appointment_and_updates_the_crm(h: Ha
     assert appointment.title == "Roof inspection: Jane Doe"
     assert appointment.contact_id == "contact-1"
     assert result.reply == (
-        "You're all set for Tuesday at noon. Our inspector will meet you at the house. "
+        "You're all set for tomorrow at noon. Our inspector will meet you at the house. "
         "Just text here if anything changes."
     )
     conv = h.conv
@@ -356,10 +396,10 @@ async def test_reschedule_to_a_different_day_never_offers_the_booked_day():
     for h in (plain, different):
         await h.reach("booked")                               # booked Mon 10/5 at 11:00 AM
     same_day_ok = await plain.say("can we move it", U("reschedule"))
-    assert same_day_ok.template_key == "reschedule" and "Monday at " in same_day_ok.reply
+    assert same_day_ok.template_key == "reschedule" and "today at " in same_day_ok.reply
 
     moved = await different.say("need a different day", U("reschedule", different_day=True))
-    assert moved.template_key == "reschedule" and "Monday at " not in moved.reply
+    assert moved.template_key == "reschedule" and "today at " not in moved.reply
     assert len(different.calendar.appointments) == 1 and different.conv.status == "booked"
 
 

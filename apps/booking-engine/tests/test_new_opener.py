@@ -22,7 +22,7 @@ NEW_OPENING = (
     "Hey, it's Roof Demo. Sorry we missed your call! Is this about your roof? "
     "I can get an inspector out this week if you'd like. (Reply STOP to opt out)"
 )
-STILL_ON = "Hey, you're still on for Monday at 11 AM. Want to keep that or move it?"
+STILL_ON = "Hey, you're still on for today at 11 AM. Want to keep that or move it?"
 
 
 @pytest.fixture

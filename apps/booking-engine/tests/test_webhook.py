@@ -189,7 +189,7 @@ async def test_a_picture_only_text_is_thanked_and_noted_on_the_contact(site: Sit
     assert response.json() == {"status": "accepted"}
     assert site.ghl.sent == [(
         "Thanks for the photo. Your inspector will take a look in person. "
-        "Would Monday at 11 AM or Tuesday at 3 PM work?"
+        "Would today at 11 AM or tomorrow at 3 PM work?"
     )]
     assert site.ghl.bodies("POST", "/notes") == [{"body": PHOTO_NOTE}]
     assert site.understander.contexts == []
@@ -254,7 +254,7 @@ async def test_first_reply_offers_real_slots_and_seeds_the_ghl_opening_text(site
     response = await site.text("yes", U("affirm"))
     assert response.json() == {"status": "accepted"}
     assert site.ghl.sent == [(
-        "Great, I've got Monday at 11 AM or Tuesday at 3 PM. Which works better?"
+        "Great, I've got today at 11 AM or tomorrow at 3 PM. Which works better?"
     )]
     # The model saw the opening message GHL actually sent, not the configured fallback.
     assert site.understander.contexts[0].history == [{"role": "engine", "text": OPENING}]
@@ -271,7 +271,7 @@ async def test_picking_a_slot_books_it_in_ghl_and_updates_the_crm(site: Site):
         "startTime": "2026-10-05T11:00:00-05:00", "endTime": "2026-10-05T12:00:00-05:00",
         "title": "Roof inspection: Jane Doe", "appointmentStatus": "confirmed",
     }
-    assert site.ghl.sent[-1].startswith("You're all set for Monday at 11 AM.")
+    assert site.ghl.sent[-1].startswith("You're all set for today at 11 AM.")
     assert site.ghl.bodies("PUT", "/opportunities/opp-1")[-1]["pipelineStageId"] == "st-booked"
     assert "booked" in site.ghl.tags
     assert site.conv.status == "booked" and site.conv.appointment_id == "appt-1"

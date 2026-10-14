@@ -11,7 +11,7 @@ import httpx
 
 from booking_engine.config_loader import ClientConfig, StageIds, load_client
 from booking_engine.ghl_client import GhlClient
-from tests.conftest import TZ
+from tests.conftest import TEST_LEAD_MINUTES, TZ
 
 LOCATION, CALENDAR, PIPELINE, TOKEN = "loc-1", "cal-1", "pipe-1", "pit-secret-token"
 STAGES = StageIds(texted="st-texted", replied="st-replied", booked="st-booked", no_response="st-none")
@@ -21,7 +21,8 @@ OPENING = "Hi, this is Roof Demo. Sorry we missed your call! Want a free roof in
 def live_client(**overrides) -> ClientConfig:
     return load_client("roof-demo").model_copy(
         update={"ghl_location_id": LOCATION, "calendar_id": CALENDAR, "pipeline_id": PIPELINE,
-                "stage_ids": STAGES, "company_phone": "+19035550100", **overrides}
+                "stage_ids": STAGES, "company_phone": "+19035550100",
+                "min_lead_time_minutes": TEST_LEAD_MINUTES, **overrides}
     )
 
 

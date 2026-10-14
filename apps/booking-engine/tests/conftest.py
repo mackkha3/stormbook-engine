@@ -26,6 +26,7 @@ from booking_engine.templates import Templates
 from booking_engine.understanding import TurnContext, Understanding
 
 TZ = ZoneInfo("America/Chicago")
+TEST_LEAD_MINUTES = 120     # pinned, so the scenarios above stay put whatever the client sets
 NOW = datetime(2026, 10, 5, 9, 0, tzinfo=TZ)
 SLOT_1 = datetime(2026, 10, 5, 11, 0, tzinfo=TZ)
 SLOT_2 = datetime(2026, 10, 6, 12, 0, tzinfo=TZ)
@@ -58,7 +59,9 @@ class ScriptedUnderstander:
 
 class Harness:
     def __init__(self, *, debounce_seconds: float = 0.0, **client_overrides) -> None:
-        self.client = load_client("roof-demo").model_copy(update=client_overrides)
+        self.client = load_client("roof-demo").model_copy(
+            update={"min_lead_time_minutes": TEST_LEAD_MINUTES, **client_overrides}
+        )
         self.templates = Templates.load()
         self.store = Store(init_db(make_engine("sqlite:///:memory:")))
         self.calendar = MockCalendar(TZ, busy_ratio=0.0)
