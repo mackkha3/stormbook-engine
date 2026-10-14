@@ -7,6 +7,7 @@ The inbound webhook's work is in webhook.py.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
@@ -41,6 +42,18 @@ configure_logging()
 log = get(__name__)
 
 ADMIN_SECRET_HEADER = "X-Admin-Secret"
+SWEEP_SECONDS = 60
+
+
+async def sweep_missing_addresses(runtimes: dict, every: float = SWEEP_SECONDS) -> None:
+    """Forever: tell roofers about bookings still without an address (Engine.flag_missing_addresses)."""
+    while True:
+        await asyncio.sleep(every)
+        for runtime in runtimes.values():
+            try:
+                await runtime.engine.flag_missing_addresses()
+            except Exception:
+                log.exception("address_sweep_failed", extra={"client": runtime.client.client_slug})
 
 
 @asynccontextmanager
@@ -71,7 +84,9 @@ async def lifespan(app: FastAPI):
                 "clients": sorted(c.client_slug for c in app.state.clients.values()),
             },
         )
+        sweeper = asyncio.create_task(sweep_missing_addresses(app.state.runtimes))
         yield
+        sweeper.cancel()
         # Finish the turns still inside their debounce window before the clients close.
         for runtime in app.state.runtimes.values():
             await runtime.engine.debouncer.drain()

@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    false,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Conversation.status values (spec section 8).
@@ -50,6 +60,18 @@ class Conversation(Base):
     appointment_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     booked_time: Mapped[str | None] = mapped_column(String(40), nullable=True)
     handoff_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    # Where the inspection is and who to ask for. Added after launch: see db.ADDED_COLUMNS.
+    address: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    given_name: Mapped[str | None] = mapped_column(String(60), nullable=True)   # as they texted it
+    # Booked without an address: when it was asked for. Cleared once it arrives or the
+    # 30-minute "Address missing, call them." alert has gone out (address_missing).
+    address_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    address_missing: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(

@@ -271,9 +271,9 @@ async def test_picking_a_slot_books_it_in_ghl_and_updates_the_crm(site: Site):
         "startTime": "2026-10-05T11:00:00-05:00", "endTime": "2026-10-05T12:00:00-05:00",
         "title": "Roof inspection: Jane Doe", "appointmentStatus": "confirmed",
     }
-    assert site.ghl.sent[-1].startswith("You're all set for today at 11 AM.")
+    assert site.ghl.sent[-1].startswith("You're booked for today at 11 AM.")
     assert site.ghl.bodies("PUT", "/opportunities/opp-1")[-1]["pipelineStageId"] == "st-booked"
-    assert "booked" in site.ghl.tags
+    assert "booked" not in site.ghl.tags          # held until the address arrives
     assert site.conv.status == "booked" and site.conv.appointment_id == "appt-1"
 
 

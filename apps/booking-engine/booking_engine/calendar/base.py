@@ -35,6 +35,10 @@ class Calendar(ABC):
     async def cancel(self, appointment_id: str) -> None:
         """Cancel an existing appointment."""
 
+    @abstractmethod
+    async def retitle(self, appointment_id: str, title: str) -> None:
+        """Rename an existing appointment (the address arrived after booking)."""
+
     async def is_free(self, slot: datetime) -> bool:
         """Fresh re-check that `slot` is still open. Called immediately before booking."""
         return any(s == slot for s in await self.free_slots(slot, slot))

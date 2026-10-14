@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -57,6 +58,17 @@ class Store:
             session.add(conversation)
             session.commit()
             return conversation, True
+
+    def waiting_for_address(self, client_slug: str, asked_before: datetime) -> list[str]:
+        """Contact ids booked without an address that was asked for before `asked_before` (UTC)."""
+        with self._sessions() as session:
+            return list(session.scalars(
+                select(Conversation.contact_id).where(
+                    Conversation.client_slug == client_slug,
+                    Conversation.address_requested_at.is_not(None),
+                    Conversation.address_requested_at <= asked_before,
+                )
+            ))
 
     def save(self, conversation: Conversation) -> Conversation:
         with self._sessions() as session:

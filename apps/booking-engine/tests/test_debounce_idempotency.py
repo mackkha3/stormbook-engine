@@ -58,7 +58,7 @@ async def test_burst_of_texts_gets_exactly_one_reply():
     assert len(h.results) == 1 and len(h.gateway.sent) == 1
     assert h.results[0].inbound_text == "yes\ntuesday works\nthx"
     assert h.understander.contexts[-1].message == "yes\ntuesday works\nthx"
-    assert h.results[0].template_key == "booked" and len(h.calendar.appointments) == 1
+    assert h.results[0].template_key == "booked_ask_address" and len(h.calendar.appointments) == 1
 
 
 async def test_duplicate_message_id_is_dropped():
@@ -100,7 +100,7 @@ async def test_text_sent_while_a_turn_is_processing_becomes_the_next_turn():
     await asyncio.sleep(0.04)                        # first turn is mid-flight
     h.engine.receive(h.contact, h.message("1"))
     await h.engine.debouncer.drain()
-    assert [r.template_key for r in h.results] == ["offer_slots", "booked"]
+    assert [r.template_key for r in h.results] == ["offer_slots", "booked_ask_address"]
     assert len(h.gateway.sent) == 2                  # one reply per turn, in order
 
 

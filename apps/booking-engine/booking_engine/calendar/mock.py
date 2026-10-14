@@ -107,6 +107,10 @@ class MockCalendar(Calendar):
         appointment.cancelled = True
         self._taken.discard(appointment.slot)
 
+    async def retitle(self, appointment_id: str, title: str) -> None:
+        self._maybe_fail()
+        self._get(appointment_id).title = title
+
     def _get(self, appointment_id: str) -> MockAppointment:
         appointment = self.appointments.get(appointment_id)
         if appointment is None or appointment.cancelled:

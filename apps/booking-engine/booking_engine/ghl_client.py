@@ -155,6 +155,12 @@ class GhlClient:
         contact = data.get("contact")
         return contact if isinstance(contact, dict) else {}
 
+    async def update_contact(self, contact_id: str, fields: dict[str, str]) -> None:
+        """PUT /contacts/{contactId} with only the given fields (address1, firstName...)."""
+        await self._request(
+            "PUT", f"/contacts/{_id(contact_id)}", version=VERSION_CONTACTS, json=fields
+        )
+
     async def add_tags(self, contact_id: str, tags: list[str]) -> None:
         await self._request(
             "POST", f"/contacts/{_id(contact_id)}/tags", version=VERSION_CONTACTS,

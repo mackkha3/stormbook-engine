@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from booking_engine import gateway as gw
-from booking_engine.calendar.base import Calendar
+from booking_engine.calendar.base import Calendar, CalendarError
 from booking_engine.config_loader import ClientConfig, ConfigError
 from booking_engine.conversation import (
     DEFAULT_LEAD_SOURCE,
@@ -23,10 +23,12 @@ from booking_engine.conversation import (
     OPENER_KEPT,
     REQUIRED_TEMPLATES,
     apply_new_opener,
+    appointment_title,
     decide,
     decide_photo,
 )
 from booking_engine.debounce import Debouncer
+from booking_engine.details import clean_address, split_name
 from booking_engine.logger import get
 from booking_engine.models import BOOKED, HANDOFF, OPTED_OUT, STOPPED, Conversation
 from booking_engine.slots import format_slot, friendly_slot, from_key
@@ -61,6 +63,8 @@ log = get(__name__)
 
 MAX_ENGINE_MESSAGES = 8      # without a booking; the next reply becomes a handoff
 NOTE_MESSAGES = 6
+ADDRESS_WAIT = timedelta(minutes=30)     # booked, no address: then the roofer is told to call
+ADDRESS_MISSING = "Address missing, call them."
 PHOTO_TEXT = "[photo]"       # stands in for a picture-only text in history, notes and logs
 PHOTO_NOTE = (
     "Booking engine: the homeowner sent a photo by text. It is in their GHL conversation."
@@ -121,6 +125,8 @@ class Engine:
     async def handle_turn(self, contact: Contact, messages: list[InboundMessage]) -> TurnResult:
         """Process one debounced turn. Sends at most one reply."""
         conv = self.open_conversation(contact)
+        if conv.address is None:
+            conv.address = clean_address(contact.address)     # GHL has it (web-form leads)
         bodies = [m.body.strip() for m in messages if m.body.strip()]
         photo = any(m.photo for m in messages)
         text = "\n".join(bodies) or (PHOTO_TEXT if photo else "")
@@ -244,6 +250,7 @@ class Engine:
                         offered=[from_key(k, tz) for k in conv.current_offer],
                         booked_time=from_key(conv.booked_time, tz) if conv.booked_time else None,
                         awaiting_preference=conv.awaiting_preference, history=history,
+                        asked_for_address=conv.status == BOOKED and conv.address is None,
                     )
                 )
             except UnderstandingError as exc:
@@ -272,29 +279,29 @@ class Engine:
         ):
             decision = handoff("max_messages_without_booking")
 
-        message, decision = self._render_safely(decision, now)
+        message, decision = self._render_safely(decision, now, conv)
         await self._apply(conv, decision, message, history, text, result)
 
     def _render_safely(
-        self, decision: Decision, now: datetime
+        self, decision: Decision, now: datetime, conv: Conversation
     ) -> tuple[RenderedMessage | None, Decision]:
         """Render the reply and run the output safety check; on failure, hand off instead."""
         if decision.template_key is None:
             return None, decision
         try:
-            return self._render(decision, now), decision
+            return self._render(decision, now, conv), decision
         except (UnsafeOutput, TemplateError) as exc:
             reason = exc.reason if isinstance(exc, UnsafeOutput) else str(exc)
             log.error("output_rejected", extra={"template": decision.template_key, "why": reason})
             fallback = handoff(f"output_rejected:{reason}")
             fallback.booking = decision.booking
             try:
-                return self._render(fallback, now), fallback
+                return self._render(fallback, now, conv), fallback
             except (UnsafeOutput, TemplateError):
                 fallback.template_key = None
                 return None, fallback
 
-    def _render(self, decision: Decision, now: datetime) -> RenderedMessage:
+    def _render(self, decision: Decision, now: datetime, conv: Conversation) -> RenderedMessage:
         tz, c = self.client.tz, self.client
 
         def say(slot: datetime) -> str:
@@ -304,6 +311,9 @@ class Engine:
             "company_name": c.company_name,
             "company_phone": c.company_phone,
             "service_area": c.service_area_text,
+            # Only ever the checked address and the name they texted, never GHL's caller ID.
+            "address": conv.address or "",
+            "name": conv.given_name or "",
             **{f"slot_{i}": say(s) for i, s in enumerate(decision.slots, start=1)},
         }
         if decision.booked_time is not None:
@@ -337,7 +347,12 @@ class Engine:
             await crm("add_note", body=PHOTO_NOTE)
         if decision.mark_booked:
             await crm("set_stage", stage="booked")
-            await crm("add_tags", tags=[gw.TAG_BOOKED])
+            if conv.address_requested_at is None:
+                # Waiting on the address holds the tag back, so the roofer's "booked"
+                # alert fires once, with the address or with "address missing".
+                await crm("add_tags", tags=[gw.TAG_BOOKED])
+        if decision.details:
+            await self._save_details(conv, decision.details, crm)
 
         transcript = [*history, {"role": "homeowner", "text": text}]
         if message is not None:
@@ -368,6 +383,81 @@ class Engine:
                         f"cancelled. Call them if you need to reach them.\n\n{lines}"
                     ),
                 )
+
+    async def _save_details(
+        self, conv: Conversation, details: dict[str, str], crm: Callable[..., Any]
+    ) -> None:
+        """Address / name from the homeowner → the GHL contact, the appointment, a note."""
+        fields: dict[str, str] = {}
+        if "address" in details:
+            fields["address1"] = details["address"]
+        if "name" in details:
+            first, last = split_name(details["name"])
+            fields |= {"firstName": first, "lastName": last}
+        if fields:
+            await crm("update_contact", fields=fields)
+            if conv.appointment_id:
+                try:
+                    await self.calendar.retitle(conv.appointment_id, appointment_title(conv))
+                except CalendarError as exc:
+                    log.error("appointment_not_retitled", extra={"error": str(exc)})
+        lines = ["Booking engine: details from the homeowner."]
+        if "address" in details:
+            lines.append(f"Address: {details['address']}")
+        if "address_unchecked" in details:
+            lines.append(
+                f"Address as texted (not checked, not saved to the contact): "
+                f"{details['address_unchecked']}"
+            )
+        if "name" in details:
+            lines.append(f"Ask for: {details['name']}")
+        if conv.booked_time:
+            lines.append(f"Inspection: {format_slot(from_key(conv.booked_time, self.client.tz), self.client.tz)}")
+        await crm("add_note", body="\n".join(lines))
+
+        got_address = "address" in details or "address_unchecked" in details
+        if got_address and conv.address_requested_at is not None and conv.appointment_id:
+            conv.address_requested_at = None
+            await crm("add_tags", tags=[gw.TAG_BOOKED])          # the held-back booked alert
+        if "address" in details and conv.address_missing:
+            conv.address_missing = False
+            await crm("remove_tags", tags=[gw.TAG_ADDRESS_MISSING])
+
+    async def flag_missing_addresses(self) -> int:
+        """Bookings still without an address ADDRESS_WAIT after asking: tell the roofer.
+
+        Adds the held-back `booked` tag with `engine-address-missing` and a note. Runs
+        under the contact's turn lock, so it never interleaves with a turn. Returns how
+        many were flagged; a GHL failure leaves the booking to be tried again next time.
+        """
+        slug, flagged = self.client.client_slug, 0
+        due = self._clock().astimezone(UTC) - ADDRESS_WAIT
+        for contact_id in self.store.waiting_for_address(slug, due):
+            async with self.debouncer.lock(contact_id):
+                conv = self.store.get_conversation(slug, contact_id)
+                if conv is None or conv.address_requested_at is None:
+                    continue                                     # the address just came in
+                if conv.appointment_id is None or conv.booked_time is None:
+                    conv.address_requested_at = None
+                    self.store.save(conv)
+                    continue
+                when = format_slot(from_key(conv.booked_time, self.client.tz), self.client.tz)
+                try:
+                    await self.gateway.add_note(
+                        contact_id,
+                        f"Booking engine: {ADDRESS_MISSING} The inspection on {when} is "
+                        "booked, but the homeowner has not texted the address.",
+                    )
+                    await self.gateway.add_tags(contact_id, [gw.TAG_BOOKED, gw.TAG_ADDRESS_MISSING])
+                except Exception:
+                    log.exception("address_missing_not_flagged", extra={"contact_id": contact_id})
+                    continue
+                conv.address_requested_at, conv.address_missing = None, True
+                self.store.save(conv)
+                flagged += 1
+                log.info("address_missing_flagged",
+                         extra={"client": slug, "contact_id": contact_id, "booked_time": when})
+        return flagged
 
     def _record(self, conv: Conversation, result: TurnResult, message_ids: list[str]) -> None:
         """Persist state + the turn, and emit the structured turn log."""

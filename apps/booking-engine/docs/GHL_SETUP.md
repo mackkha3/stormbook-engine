@@ -15,7 +15,7 @@ Name it `Stormbook booking engine` and tick exactly these scopes:
 | Scope | Used for |
 |---|---|
 | `contacts.readonly` | Read the contact's tags, name and phone |
-| `contacts.write` | Add/remove tags, add notes |
+| `contacts.write` | Add/remove tags, add notes, save the address and name the homeowner texts |
 | `conversations.readonly` | Find the contact's conversation |
 | `conversations/message.readonly` | Read the opening text and the inbound message |
 | `conversations/message.write` | Send the reply SMS |
@@ -39,7 +39,8 @@ Create these under **Settings → Tags** so workflows can use them:
 | `engine-new-opener` | **Your first-text workflows** | A new opener was just sent. The engine removes it |
 | `engine-handoff` | Engine | A human must take over. `engine-active` is removed |
 | `engine-emergency` | Engine | Added with `engine-handoff` for active leaks and similar |
-| `booked` | Engine | Inspection booked |
+| `booked` | Engine | Inspection booked, and the address is in or 30 minutes have passed (see 5b) |
+| `engine-address-missing` | Engine | Booked, but no address 30 minutes after asking. Removed if it arrives |
 | `engine-cancelled` | Engine | Homeowner cancelled by text |
 | `engine-opted-out` | Engine | Homeowner opted out. Nothing more is sent |
 | `engine-optout-booked` | Engine | Opted out while an inspection is still booked |
@@ -147,6 +148,30 @@ two ids and fetches the text from GHL itself.
 3. Optional branch: if the contact also has `engine-emergency`, notify by SMS
    or call as well. That tag means water is coming in right now.
 
+## 5b. Workflow: `booked` alert
+
+**Trigger it on the `booked` tag, not on "Appointment Booked" or "Customer
+booked appointment".** The engine books the slot the moment the homeowner picks
+it, then asks "What's the address, and who should the inspector ask for?". GHL's
+appointment trigger fires at booking, before there is an address. The engine
+holds the `booked` tag back until:
+
+- the homeowner texts the address: it is saved to the contact's **Address**
+  field (and their name, if they gave one, to First/Last name), added to the
+  appointment title, and written in a note; or
+- 30 minutes pass without one: `booked` goes on together with
+  `engine-address-missing`, and the newest note says **"Address missing, call
+  them."**
+
+Web-form leads whose contact already has an address are never asked; `booked`
+goes on at booking.
+
+1. **Trigger:** Contact Tag → tag added → `booked`.
+2. **Action:** internal notification to the roofer with the contact's name,
+   phone, **address**, the appointment time and a link to the conversation.
+3. Branch: if the contact has `engine-address-missing`, say "Address missing,
+   call them." instead of the address.
+
 ## 6. IDs for the client config
 
 | Config field | Where to find it |
@@ -187,7 +212,9 @@ published OpenAPI specs
 | Create appointment | `POST /calendars/events/appointments` | 2021-04-15 | `{calendarId, locationId, contactId, startTime, endTime, title, appointmentStatus: "confirmed"}` |
 | Move appointment | `PUT /calendars/events/appointments/{eventId}` | 2021-04-15 | `{calendarId, startTime, endTime}` |
 | Cancel appointment | `PUT /calendars/events/appointments/{eventId}` | 2021-04-15 | `{appointmentStatus: "cancelled"}` |
+| Rename appointment | `PUT /calendars/events/appointments/{eventId}` | 2021-04-15 | `{title}` (adds the address) |
 | Read contact | `GET /contacts/{contactId}` | 2021-07-28 | |
+| Save address / name | `PUT /contacts/{contactId}` | 2021-07-28 | `{address1}`, `{firstName, lastName}` |
 | Add tags | `POST /contacts/{contactId}/tags` | 2021-07-28 | `{tags: [...]}` |
 | Remove tags | `DELETE /contacts/{contactId}/tags` | 2021-07-28 | `{tags: [...]}` |
 | Add note | `POST /contacts/{contactId}/notes` | 2021-07-28 | `{body}` |

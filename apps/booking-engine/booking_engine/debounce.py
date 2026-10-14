@@ -54,6 +54,10 @@ class Debouncer:
             except Exception:
                 log.exception("debounced_turn_failed", extra={"key": key})
 
+    def lock(self, key: str) -> asyncio.Lock:
+        """Held while `key`'s turn is processed; take it to change that key's state safely."""
+        return self._locks[key]
+
     async def drain(self) -> None:
         """Wait until every buffered message has been processed."""
         while self._tasks:

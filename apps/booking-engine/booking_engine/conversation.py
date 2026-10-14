@@ -8,9 +8,10 @@ cancel); the engine does the rendering, the safety check, and the CRM calls.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from booking_engine.calendar.base import CalendarError, SlotUnavailable
+from booking_engine.details import clean_address, clean_name
 from booking_engine.models import (
     ACTIVE,
     BOOKED,
@@ -36,7 +37,7 @@ REQUIRED_TEMPLATES = {
     "propose_time_no_match", "booked", "deflect", "deflect_again", "basic_who", "basic_area", "is_bot",
     "which_one", "clarify", "reschedule", "cancelled", "handoff", "emergency", "not_interested",
     "no_slots_available", "photo_received", "photo_received_booked", "still_booked",
-    "kept",
+    "kept", "booked_ask_address", "booked_at_address", "booked_at_address_name", "ask_address",
 }
 # Opening texts GHL sends, one per lead source (templates.yaml: opening_<lead_source>).
 # Never sent by the engine; used to seed a new conversation's history.
@@ -109,12 +110,44 @@ def _start_over(conv: Conversation, *, keep_appointment: bool) -> None:
 
 async def decide(t: Turn) -> Decision:
     was_cancelled = t.conv.status == CANCELLED
+    details = _capture_details(t)
     try:
-        decision = await _decide(t)
+        decision = await _decide(t, details)
     except CalendarError as exc:
         decision = handoff(f"calendar_error: {exc}")
     decision.reopened = was_cancelled and t.conv.status != CANCELLED
+    decision.details = details
     return decision
+
+
+def _capture_details(t: Turn) -> dict[str, str] | None:
+    """Keep the address / name this message gives, if they pass the checks."""
+    u, conv, found = t.u, t.conv, {}
+    if u.address:
+        address = clean_address(u.address)
+        if address:
+            conv.address = found["address"] = address
+        else:
+            found["address_unchecked"] = " ".join(u.address.split())[:200]
+    name = clean_name(u.contact_name)
+    if name:
+        conv.given_name = found["name"] = name
+    return found or None
+
+
+def _details_reply(t: Turn, details: dict[str, str]) -> Decision | None:
+    """The answer to "What's the address, and who should the inspector ask for?"."""
+    conv = t.conv
+    if conv.status != BOOKED:
+        return None                      # kept for the booking; carry on scheduling
+    booked = from_key(conv.booked_time, t.client.tz)
+    if conv.address:
+        key = "booked_at_address_name" if conv.given_name else "booked_at_address"
+    elif "address_unchecked" in details:
+        key = "booked"                   # can't text it back; the roofer gets it in a note
+    else:
+        return Decision(template_key="ask_address")      # a name, but still no address
+    return Decision(template_key=key, booked_time=booked, verified=[booked])
 
 
 async def decide_photo(t: Turn) -> Decision:
@@ -128,9 +161,11 @@ async def decide_photo(t: Turn) -> Decision:
         return handoff(f"calendar_error: {exc}")
 
 
-async def _decide(t: Turn) -> Decision:
+async def _decide(t: Turn, details: dict[str, str] | None) -> Decision:
     conv, u = t.conv, t.u
     intent = u.intent
+    if intent == "give_details" and not details:
+        intent = "unclear"               # nothing usable in it after all
     booked = conv.status == BOOKED
     t.prev_unclear, t.prev_none_work = conv.unclear_streak, conv.none_work_streak
     conv.unclear_streak = conv.none_work_streak = 0
@@ -161,6 +196,12 @@ async def _decide(t: Turn) -> Decision:
             return handoff(f"{intent}_after_cancellation")
         conv.status = ACTIVE
         conv.engine_message_count = 0        # the message cap restarts with the new attempt
+    if details and intent in ("give_details", "affirm", "unclear"):
+        reply = _details_reply(t, details)
+        if reply is not None:
+            return reply
+        if intent == "give_details":
+            intent = "affirm"            # not booked yet: on to the times
     if intent == "cancel" and booked:
         return await _cancel(t)
     if intent in ("cancel", "not_interested"):
@@ -242,6 +283,12 @@ async def _decide(t: Turn) -> Decision:
 def _still_booked(t: Turn) -> Decision:
     booked = from_key(t.conv.booked_time, t.client.tz)
     return Decision(template_key="still_booked", booked_time=booked, verified=[booked])
+
+
+def appointment_title(conv: Conversation) -> str:
+    """The calendar entry: who to ask for (the name they gave, else GHL's) and where."""
+    title = f"Roof inspection: {conv.given_name or conv.contact_name or conv.contact_phone}"
+    return f"{title}, {conv.address}" if conv.address else title
 
 
 def _second_none_work(t: Turn) -> bool:
@@ -336,7 +383,7 @@ async def _book(t: Turn, slot: datetime) -> Decision:
             conv.appointment_id = await t.calendar.book(
                 slot,
                 contact_id=conv.contact_id,
-                title=f"Roof inspection: {conv.contact_name or conv.contact_phone}",
+                title=appointment_title(conv),
                 duration_minutes=c.inspection_duration_minutes,
             )
     except SlotUnavailable:
@@ -359,8 +406,15 @@ async def _book(t: Turn, slot: datetime) -> Decision:
     conv.booked_time = slot_key(slot)
     conv.current_offer = []
     conv.offer_template = None
+    if conv.address:
+        key = "booked_at_address_name" if conv.given_name else "booked_at_address"
+    else:
+        # Booked first, then ask where. The 30-minute clock starts at the first ask.
+        key = "booked_ask_address"
+        if conv.address_requested_at is None and not conv.address_missing:
+            conv.address_requested_at = t.now.astimezone(UTC)
     return Decision(
-        template_key="booked",
+        template_key=key,
         booked_time=slot,
         verified=[slot],
         mark_booked=True,
@@ -380,6 +434,7 @@ async def _cancel(t: Turn) -> Decision:
     conv.status = CANCELLED
     conv.current_offer = []
     conv.appointment_id = conv.booked_time = None
+    conv.address_requested_at = None     # nothing booked, nothing to chase
     return Decision(
         template_key="cancelled",
         cancelled=True,

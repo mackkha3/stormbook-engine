@@ -26,6 +26,8 @@ class Contact:
     # Phase 2: the actual last outbound message from the GHL conversation. When set it
     # is used instead of the configured opening text for `lead_source`.
     opening_text: str | None = None
+    # The GHL contact's address (web-form leads have one), unchecked.
+    address: str | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +71,9 @@ class Decision:
     reopened: bool = False               # a cancelled conversation came back to life
     booking: dict | None = None          # what happened on the calendar, for the turn log
     mark_booked: bool = False            # move opportunity to `booked`, add the booked tag
+    # Address / name the homeowner just gave: {"address", "name"} when they passed the
+    # checks, {"address_unchecked"} when an address did not. Written to GHL by the engine.
+    details: dict[str, str] | None = None
 
 
 def handoff(reason: str, *, template: str | None = "handoff", urgent: bool = False) -> Decision:

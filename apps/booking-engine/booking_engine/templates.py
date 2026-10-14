@@ -17,7 +17,11 @@ import yaml
 
 from booking_engine.settings import CONFIG_DIR
 
-ALLOWED_VARIABLES = {"company_name", "booked_time", "service_area", "company_phone"}
+# {address} and {name} are the homeowner's own words, only after details.clean_address /
+# clean_name passed them.
+ALLOWED_VARIABLES = {
+    "company_name", "booked_time", "service_area", "company_phone", "address", "name",
+}
 _SLOT_VAR = re.compile(r"^slot_([1-9])$")
 
 BANNED_PHRASES = (
@@ -59,6 +63,11 @@ class RenderedMessage:
     key: str
     text: str
     variables: dict[str, str] = field(default_factory=dict)
+
+
+def time_like(text: str) -> bool:
+    """True if `text` reads as a clock time, a date, or a day ("3 PM", "10/12", "tomorrow")."""
+    return bool(_TIME_LIKE.search(text))
 
 
 def _capitalize(text: str) -> str:

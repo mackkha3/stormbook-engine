@@ -35,6 +35,7 @@ class FakeGhl:
         self.requests: list[httpx.Request] = []
         self.tags: set[str] = {"engine-active"}
         self.contact_location = LOCATION
+        self.contact_fields: dict[str, str] = {}      # address1, city, firstName... as GHL keeps them
         self.slots: list[datetime] = [
             slot(5, 11), slot(5, 14), slot(6, 10), slot(6, 15), slot(7, 9), slot(7, 13),
         ]
@@ -97,7 +98,11 @@ class FakeGhl:
             return httpx.Response(200, json={"contact": {
                 "id": path.split("/")[2], "locationId": self.contact_location,
                 "name": "Jane Doe", "phone": "+19035550199", "tags": sorted(self.tags),
+                **self.contact_fields,
             }})
+        if method == "PUT" and path.startswith("/contacts/") and path.count("/") == 2:
+            self.contact_fields.update(body)
+            return httpx.Response(200, json={"succeded": True, "contact": {"id": path.split("/")[2]}})
         if path.endswith("/tags"):
             self.tags = (self.tags | set(body["tags"])) if method == "POST" else (
                 self.tags - set(body["tags"])

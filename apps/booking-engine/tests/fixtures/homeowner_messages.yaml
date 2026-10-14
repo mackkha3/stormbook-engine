@@ -6,13 +6,16 @@
 #             offered  the engine offered  1. Mon 10/5 at 11:00 AM   2. Tue 10/6 at 12:00 PM,
 #                      which the homeowner read as "Monday at 11 AM or Tuesday at noon"
 #             asked    the engine asked "what day and time work best for you?"
-#             booked   an inspection is booked for Mon 10/5 at 11:00 AM
+#             booked   an inspection is booked for Mon 10/5 at 11:00 AM, and the engine
+#                      asked "What's the address, and who should the inspector ask for?"
 #             cancelled  that inspection was booked, then cancelled by the homeowner
 #   intent  the intent the model must return
 #   slot_choice / preferred_date / preferred_time_window   details it must extract (if listed)
 #   question_topic   for basic_question: who | area | other
 #   acknowledgment_only: true   nothing but "ok" / "thanks"
 #   different_day: true   booked, and asks for another day without naming one
+#   address / contact_name   what give_details must pull out (live: the model's value must
+#                            contain it, ignoring case and punctuation)
 #   live_not_opt_out: true   wording is ambiguous; live only checks it is NOT read as an opt-out
 #   keyword: true    caught by the code opt-out rule before the model is asked (skipped live)
 #   expect  the template the engine must answer with ("none" = send nothing)
@@ -38,22 +41,22 @@
 - {text: "yes we had some hail damage from the storm last week, want someone to take a look", state: fresh, intent: affirm, expect: offer_slots}
 
 # --- pick_slot ------------------------------------------------------------
-- {text: "1", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
-- {text: "2", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
-- {text: "the second one", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
-- {text: "tuesday works", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
-- {text: "monday is good", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
-- {text: "first one pls", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
-- {text: "lets do the 11am", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
+- {text: "1", state: offered, intent: pick_slot, slot_choice: 1, expect: booked_ask_address}
+- {text: "2", state: offered, intent: pick_slot, slot_choice: 2, expect: booked_ask_address}
+- {text: "the second one", state: offered, intent: pick_slot, slot_choice: 2, expect: booked_ask_address}
+- {text: "tuesday works", state: offered, intent: pick_slot, slot_choice: 2, expect: booked_ask_address}
+- {text: "monday is good", state: offered, intent: pick_slot, slot_choice: 1, expect: booked_ask_address}
+- {text: "first one pls", state: offered, intent: pick_slot, slot_choice: 1, expect: booked_ask_address}
+- {text: "lets do the 11am", state: offered, intent: pick_slot, slot_choice: 1, expect: booked_ask_address}
 # The offer no longer shows numbers, so the answer is usually a piece of one slot.
-- {text: "Tuesday", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
-- {text: "monday", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
-- {text: "the first one", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
-- {text: "11 works", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
-- {text: "noon works", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
-- {text: "Tuesday's better", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
-- {text: "Monday works better", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
-- {text: "the later one", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
+- {text: "Tuesday", state: offered, intent: pick_slot, slot_choice: 2, expect: booked_ask_address}
+- {text: "monday", state: offered, intent: pick_slot, slot_choice: 1, expect: booked_ask_address}
+- {text: "the first one", state: offered, intent: pick_slot, slot_choice: 1, expect: booked_ask_address}
+- {text: "11 works", state: offered, intent: pick_slot, slot_choice: 1, expect: booked_ask_address}
+- {text: "noon works", state: offered, intent: pick_slot, slot_choice: 2, expect: booked_ask_address}
+- {text: "Tuesday's better", state: offered, intent: pick_slot, slot_choice: 2, expect: booked_ask_address}
+- {text: "Monday works better", state: offered, intent: pick_slot, slot_choice: 1, expect: booked_ask_address}
+- {text: "the later one", state: offered, intent: pick_slot, slot_choice: 2, expect: booked_ask_address}
 
 # --- propose_time ---------------------------------------------------------
 - {text: "can u do saturday", state: fresh, intent: propose_time, preferred_date: "2026-10-10", expect: propose_time_match}
@@ -146,6 +149,17 @@
 # --- hostile --------------------------------------------------------------
 - {text: "f*** off", state: fresh, intent: hostile, expect: none}
 - {text: "text me again and ill come find you scammers", state: offered, intent: hostile, expect: none}
+
+# --- give_details ---------------------------------------------------------
+- {text: "123 Oak St, Tyler. Ask for Jane", state: booked, intent: give_details, address: "123 Oak St, Tyler", contact_name: "Jane", expect: booked_at_address_name}
+- {text: "FM 2493 Tyler", state: booked, intent: give_details, address: "FM 2493 Tyler", expect: booked_at_address}
+- {text: "12345 CR 4120, I'm Mike", state: booked, intent: give_details, address: "12345 CR 4120", contact_name: "Mike", expect: booked_at_address_name}
+- {text: "hwy 69 n just past the church. ask for Mary-Jo", state: booked, intent: give_details, address: "hwy 69 n", contact_name: "Mary-Jo", expect: booked_at_address_name}
+- {text: "4410 Loop 323", state: booked, intent: give_details, address: "4410 Loop 323", expect: booked_at_address}
+- {text: "Chris and Amy", state: booked, intent: give_details, contact_name: "Chris and Amy", expect: ask_address}
+- {text: "its José", state: booked, intent: give_details, contact_name: "José", expect: ask_address}
+- {text: "88 County Road 12 Lindale, ask for O'Brien", state: booked, intent: give_details, address: "88 County Road 12 Lindale", contact_name: "O'Brien", expect: booked_at_address_name}
+- {text: "Farm to Market Road 2493 in Bullard, Pat will be there", state: booked, intent: give_details, address: "Farm to Market Road 2493", contact_name: "Pat", expect: booked_at_address_name}
 
 # --- unclear --------------------------------------------------------------
 - {text: "?", state: fresh, intent: unclear, expect: clarify}

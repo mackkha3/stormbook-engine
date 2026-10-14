@@ -29,7 +29,7 @@ MIN_CONFIDENCE = 0.7
 Intent = Literal[
     "affirm", "pick_slot", "propose_time", "none_work", "deferrable_question",
     "basic_question", "is_bot", "reschedule", "cancel", "human_request",
-    "emergency", "not_interested", "opt_out", "hostile", "unclear",
+    "emergency", "not_interested", "opt_out", "hostile", "give_details", "unclear",
 ]
 INTENTS: tuple[str, ...] = get_args(Intent)
 
@@ -45,6 +45,8 @@ class Understanding(BaseModel):
     question_topic: Literal["who", "area", "other"] | None = None
     acknowledgment_only: bool = False
     different_day: bool = False
+    address: str | None = None          # as written; checked by details.clean_address
+    contact_name: str | None = None     # as written; checked by details.clean_name
     language: str = "en"
     notes: str = ""
 
@@ -90,6 +92,7 @@ class TurnContext:
     offered: list[dt.datetime] = field(default_factory=list)
     booked_time: dt.datetime | None = None
     awaiting_preference: bool = False
+    asked_for_address: bool = False                   # booked, and no address yet
     history: list[dict[str, str]] = field(default_factory=list)
 
 
@@ -190,6 +193,10 @@ appointment, "never mind" / "nvm" belongs here.
 - opt_out: asks to stop receiving texts ("stop", "unsubscribe", "remove me"). If an \
 opt-out appears anywhere in the message, the intent is opt_out, whatever else it says.
 - hostile: abuse, insults, threats.
+- give_details: gives the property address for the inspection and/or the name the \
+inspector should ask for, usually answering "What's the address, and who should the \
+inspector ask for?" ("123 Oak St, ask for Jane", "FM 2493 Tyler", "it's 12345 CR 4120, \
+I'm Mike", "Chris and Amy").
 - unclear: anything else, or you cannot tell.
 
 Precedence when several apply: opt_out, then emergency, then hostile, then the rest.
@@ -220,6 +227,15 @@ False if they want anything, including "yes" to scheduling or rebooking.
 - different_day: true only when an appointment is booked and they ask to move it to \
 another day without naming which ("a different day", "another day", "that day won't \
 work anymore"). False when they name the day, only want another time, or do not say.
+- address: the address of the property to inspect, copied as written, with any city \
+or zip they add, only when the message states one. Texas rural addresses count: "FM \
+2493", "Farm to Market Road 2493", "12345 CR 4120", "County Road 12", "Hwy 69 N", \
+"Loop 323", "RR 2", "Spur 248", "PR 7041". Else null. Fill it whatever the intent \
+(someone rescheduling may add their address too).
+- contact_name: the name of the person the inspector should ask for, copied as \
+written ("Jane", "Mary-Jo O'Brien", "Chris and Amy"), only when the message states it \
+("ask for Jane", "I'm Mike", "it's José", or a bare name answering who to ask for). \
+Never take it from anywhere else. Else null.
 - language: ISO 639-1 code of the homeowner's message ("en", "es", ...). Slang, typos \
 and texting shorthand in English are still "en".
 - notes: a short internal reason for your choice.
@@ -244,13 +260,15 @@ OUTPUT_SCHEMA: dict[str, Any] = {
         },
         "acknowledgment_only": {"type": "boolean"},
         "different_day": {"type": "boolean"},
+        "address": {"type": ["string", "null"]},
+        "contact_name": {"type": ["string", "null"]},
         "language": {"type": "string"},
         "notes": {"type": "string"},
     },
     "required": [
         "intent", "confidence", "slot_choice", "preferred_date",
         "preferred_time_window", "question_topic", "acknowledgment_only",
-        "different_day", "language", "notes",
+        "different_day", "address", "contact_name", "language", "notes",
     ],
     "additionalProperties": False,
 }
@@ -273,6 +291,7 @@ def build_user_content(ctx: TurnContext) -> str:
         f"offered_slots:\n{offered}\n"
         f"booked_appointment: {booked}\n"
         f"asked_homeowner_to_name_a_time: {str(ctx.awaiting_preference).lower()}\n"
+        f"asked_homeowner_for_address: {str(ctx.asked_for_address).lower()}\n"
         "</context>\n\n"
         f"<recent_messages>\n{history}\n</recent_messages>\n\n"
         f"<new_homeowner_message>\n{ctx.message}\n</new_homeowner_message>"

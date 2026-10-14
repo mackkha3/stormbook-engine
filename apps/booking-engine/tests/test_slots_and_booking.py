@@ -56,7 +56,7 @@ async def test_a_slot_a_week_out_is_offered_with_its_date(h: Harness):
         "Great, I've got Monday 10/12 at 8 AM or Monday 10/12 at 9 AM. Which works better?"
     )
     booked = await h.say("the first one", U("pick_slot", slot_choice=1))
-    assert booked.reply.startswith("You're all set for Monday 10/12 at 8 AM.")
+    assert booked.reply.startswith("You're booked for Monday 10/12 at 8 AM.")
 
 
 def test_eligible_respects_lead_time_window_and_exclusions():
@@ -173,8 +173,8 @@ async def test_booking_creates_a_60_minute_appointment_and_updates_the_crm(h: Ha
     assert appointment.title == "Roof inspection: Jane Doe"
     assert appointment.contact_id == "contact-1"
     assert result.reply == (
-        "You're all set for tomorrow at noon. Our inspector will meet you at the house. "
-        "Just text here if anything changes."
+        "You're booked for tomorrow at noon. What's the address, and who should the "
+        "inspector ask for?"
     )
     conv = h.conv
     assert (conv.status, conv.appointment_id, conv.booked_time) == (
@@ -182,7 +182,6 @@ async def test_booking_creates_a_60_minute_appointment_and_updates_the_crm(h: Ha
     calls = [c for c in h.gateway.calls if c["call"] != "send_sms"]
     assert calls == [
         {"call": "set_stage", "contact_id": "contact-1", "stage": "booked"},
-        {"call": "add_tags", "contact_id": "contact-1", "tags": ["booked"]},
     ]
 
 
@@ -202,7 +201,7 @@ async def test_slot_is_rechecked_immediately_before_booking(h: Harness):
     assert not h.calendar.appointments and h.conv.status == "slots_offered"
     fresh = offer(h)
     assert len(fresh) == 2 and not {SLOT_1, SLOT_2} & set(fresh)
-    assert (await h.say("1", U("pick_slot", slot_choice=1))).template_key == "booked"
+    assert (await h.say("1", U("pick_slot", slot_choice=1))).template_key == "booked_ask_address"
 
 
 async def test_an_offered_slot_that_slipped_inside_lead_time_is_not_booked(h: Harness):
@@ -268,7 +267,7 @@ async def test_booked_plus_a_different_day_moves_the_one_appointment(h: Harness,
     assert len(h.calendar.appointments) == 1 and original.slot == SLOT_1     # nothing changed yet
 
     confirmed = await h.say("yes", U("affirm"))
-    assert confirmed.template_key == "booked" and confirmed.booking["action"] == "rescheduled"
+    assert confirmed.template_key == "booked_ask_address" and confirmed.booking["action"] == "rescheduled"
     assert len(h.calendar.appointments) == 1                  # moved, never a second appointment
     (appointment,) = live_appointments(h)
     assert appointment.id == original.id == h.conv.appointment_id
@@ -312,7 +311,7 @@ async def test_second_none_work_during_a_reschedule_asks_for_their_preference(h:
     assert proposed.booking is None and len(h.calendar.appointments) == 1
 
     moved = await h.say("yes", U("affirm"))
-    assert moved.template_key == "booked" and moved.booking["action"] == "rescheduled"
+    assert moved.template_key == "booked_ask_address" and moved.booking["action"] == "rescheduled"
     assert len(h.calendar.appointments) == 1                  # one appointment, moved
     (appointment,) = live_appointments(h)
     assert appointment.id == original.id and appointment.slot.date() == dt.date(2026, 10, 8)
@@ -357,7 +356,7 @@ async def test_bare_yes_when_booked_with_nothing_pending_still_gets_no_reply(h: 
 async def test_a_late_slot_number_after_booking_gets_no_reply(h: Harness):
     await h.say("yes", U("affirm"))                           # → slots offered
     booked = await h.say("Tue works", U("pick_slot", slot_choice=1))
-    assert booked.template_key == "booked"
+    assert booked.template_key == "booked_ask_address"
     booked_time = h.conv.booked_time
     result = await h.say("1", U("pick_slot", slot_choice=1))  # sent before the confirmation landed
     assert result.reply is None and result.template_key is None

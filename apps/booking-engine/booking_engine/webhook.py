@@ -129,6 +129,12 @@ def quiet_before(messages: list[dict[str, Any]], opening: dict[str, Any]) -> tim
     return opened - last
 
 
+def _contact_address(contact: dict[str, Any]) -> str | None:
+    """The address on the GHL contact ("123 Oak St, Tyler"), if any. Checked by the engine."""
+    parts = [str(contact.get(k) or "").strip() for k in ("address1", "city")]
+    return ", ".join(p for p in parts if p) or None
+
+
 def _fallback_message_id(inbound: Inbound) -> str:
     """Stable id for a payload without one: same contact + text in the same minute."""
     minute = (inbound.timestamp or datetime.now(UTC)).strftime("%Y%m%d%H%M")
@@ -251,6 +257,7 @@ async def handle_inbound(runtimes: dict[str, ClientRuntime], inbound: Inbound) -
             inbound.lead_source if inbound.lead_source in LEAD_SOURCES else DEFAULT_LEAD_SOURCE
         ),
         opening_text=_text(opening) if opening else None,
+        address=_contact_address(contact),
     )
     outcome = None
     if new_opener:

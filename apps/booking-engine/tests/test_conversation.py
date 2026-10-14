@@ -24,6 +24,8 @@ async def test_fixture_message_gets_the_expected_action(fixture):
         question_topic=fixture.get("question_topic"),
         acknowledgment_only=fixture.get("acknowledgment_only", False),
         different_day=fixture.get("different_day", False),
+        address=fixture.get("address"),
+        contact_name=fixture.get("contact_name"),
     )
     result = await h.say(fixture["text"], understanding)
     assert (result.template_key or "none") == fixture["expect"]
@@ -133,7 +135,7 @@ async def test_yes_to_lock_that_in_books_the_proposed_time(h: Harness):
         "propose_time", preferred_date=dt.date(2026, 10, 10), preferred_time_window="morning"))
     assert proposed.template_key == "propose_time_match"
     result = await h.say("yes", U("affirm"))
-    assert result.template_key == "booked" and "Saturday at 9 AM" in result.reply
+    assert result.template_key == "booked_ask_address" and "Saturday at 9 AM" in result.reply
 
 
 async def test_bare_yes_to_two_options_asks_which_one(h: Harness):
@@ -146,7 +148,7 @@ async def test_bare_yes_to_two_options_asks_which_one(h: Harness):
     assert h.conv.unclear_streak == 0 and h.conv.status == "slots_offered"
     # Same two slots stay on the table, so "2" still books the second one.
     booked = await h.say("2", U("pick_slot", slot_choice=2))
-    assert booked.template_key == "booked" and "tomorrow at noon" in booked.reply
+    assert booked.template_key == "booked_ask_address" and "tomorrow at noon" in booked.reply
 
 
 async def test_max_eight_messages_without_booking_then_handoff(h: Harness):
@@ -161,7 +163,7 @@ async def test_a_booking_on_the_ninth_message_still_goes_through(h: Harness):
     for _ in range(8):
         await h.say("how much", U("deferrable_question"))
     result = await h.say("fine, 1", U("pick_slot", slot_choice=1))
-    assert result.template_key == "booked" and h.conv.status == "booked"
+    assert result.template_key == "booked_ask_address" and h.conv.status == "booked"
 
 
 async def test_questions_after_booking_go_to_a_human(h: Harness):
@@ -179,7 +181,8 @@ async def test_every_turn_is_stored_for_review(h: Harness):
     assert (first.inbound_text, first.intent, first.template_key) == ("yes", "affirm", "offer_slots")
     assert first.model_output["confidence"] == 0.95 and first.outbound_text.startswith("Great,")
     assert second.booking_result["action"] == "booked" and second.status_after == "booked"
-    assert [c["call"] for c in second.crm_calls] == ["send_sms", "set_stage", "add_tags"]
+    # No `booked` tag yet: it waits for the address (or the 30-minute alert).
+    assert [c["call"] for c in second.crm_calls] == ["send_sms", "set_stage"]
 
 
 async def test_unexpected_crash_hands_off_rather_than_going_quiet(h: Harness, monkeypatch):
@@ -381,7 +384,7 @@ async def test_reopened_conversation_books_a_new_appointment(h: Harness):
     result = await h.say("1", U("pick_slot", slot_choice=1))
     first, second = h.calendar.appointments.values()
     assert first.cancelled and not second.cancelled and first.id != second.id
-    assert result.template_key == "booked" and result.booking["action"] == "booked"
+    assert result.template_key == "booked_ask_address" and result.booking["action"] == "booked"
     assert h.conv.status == "booked" and h.conv.appointment_id == second.id
 
 

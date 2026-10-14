@@ -88,6 +88,12 @@ class GhlCalendar(Calendar):
         except GhlError as exc:
             raise CalendarError(f"cancel failed: {exc}") from exc
 
+    async def retitle(self, appointment_id: str, title: str) -> None:
+        try:
+            await self._ghl.update_appointment(appointment_id, title=title)
+        except GhlError as exc:
+            raise CalendarError(f"retitle failed: {exc}") from exc
+
     @staticmethod
     def _translate(exc: GhlError, slot: datetime) -> CalendarError:
         """GHL rejects a taken slot with a 4xx whose message mentions the slot."""

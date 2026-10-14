@@ -24,6 +24,7 @@ TAG_BOOKED = "booked"
 TAG_OPTED_OUT = "engine-opted-out"
 TAG_OPTOUT_BOOKED = "engine-optout-booked"   # opted out but still has an inspection booked
 TAG_CANCELLED = "engine-cancelled"
+TAG_ADDRESS_MISSING = "engine-address-missing"   # booked, no address after 30 minutes
 TAG_NEW_OPENER = "engine-new-opener"         # set by GHL with each opener; the engine removes it
 
 
@@ -39,6 +40,10 @@ class CrmGateway(ABC):
 
     @abstractmethod
     async def add_note(self, contact_id: str, body: str) -> None: ...
+
+    @abstractmethod
+    async def update_contact(self, contact_id: str, fields: dict[str, str]) -> None:
+        """Set contact fields: the address and name the homeowner gave."""
 
     @abstractmethod
     async def set_stage(self, contact_id: str, stage: str) -> None:
@@ -75,6 +80,9 @@ class RecordingGateway(CrmGateway):
     async def add_note(self, contact_id: str, body: str) -> None:
         self.calls.append({"call": "add_note", "contact_id": contact_id, "body": body})
 
+    async def update_contact(self, contact_id: str, fields: dict[str, str]) -> None:
+        self.calls.append({"call": "update_contact", "contact_id": contact_id, "fields": dict(fields)})
+
     async def set_stage(self, contact_id: str, stage: str) -> None:
         self.calls.append({"call": "set_stage", "contact_id": contact_id, "stage": stage})
 
@@ -99,6 +107,9 @@ class GhlGateway(CrmGateway):
 
     async def add_note(self, contact_id: str, body: str) -> None:
         await self._ghl.add_note(contact_id, body)
+
+    async def update_contact(self, contact_id: str, fields: dict[str, str]) -> None:
+        await self._ghl.update_contact(contact_id, fields)
 
     async def set_stage(self, contact_id: str, stage: str) -> None:
         """Move the contact's opportunity in the client's pipeline.

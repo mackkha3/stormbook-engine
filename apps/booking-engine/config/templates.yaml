@@ -2,6 +2,8 @@
 #
 # Variables you can use: {company_name} {slot_1} {slot_2} {booked_time}
 #                        {service_area} {company_phone}
+#                        {address} {name}   (what the homeowner texted, after the
+#                                            engine's checks; never GHL's caller-ID name)
 #
 # Rules the engine enforces on every message before it is sent:
 #   - no dollar amounts
@@ -37,6 +39,12 @@ photo_received_booked: "Thanks for the photo. Your inspector will take a look wh
 no_slots_available: "Thanks. Someone from {company_name} will reach out shortly to find a time that works."
 still_booked: "Hey, you're still on for {booked_time}. Want to keep that or move it?"
 kept: "Perfect, see you then."
+# Booked, then where and who. "booked" above is used when the address they texted
+# can't be checked well enough to text back.
+booked_ask_address: "You're booked for {booked_time}. What's the address, and who should the inspector ask for?"
+booked_at_address_name: "You're all set for {booked_time} at {address}. Our inspector will ask for {name}. Just text here if anything changes."
+booked_at_address: "You're all set for {booked_time} at {address}. Our inspector will meet you there. Just text here if anything changes."
+ask_address: "Thanks, {name}. What's the address for the inspection?"
 
 # --- Opening messages (sent by GHL, NOT by the engine) -------------------------
 # The first text of every conversation is sent by a GHL workflow, one per lead

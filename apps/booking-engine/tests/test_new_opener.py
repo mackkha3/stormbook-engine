@@ -80,7 +80,7 @@ async def test_the_next_text_carries_on_and_is_never_a_second_fresh_start(site: 
 
     await reply(site, "1", U("pick_slot", slot_choice=1), after=20)
     assert site.conv.status == "booked"
-    assert site.ghl.sent[-1].startswith("You're all set for")
+    assert site.ghl.sent[-1].startswith("You're booked for")
 
 
 async def test_a_brand_new_contact_with_the_tag_is_a_normal_first_reply(site: Site):

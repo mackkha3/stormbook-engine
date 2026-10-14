@@ -310,6 +310,15 @@ async def test_live_model_classifies_fixture(fixture):
         assert u.question_topic is None
     if "preferred_date" in fixture:
         assert u.preferred_date == dt.date.fromisoformat(fixture["preferred_date"])
+    for key in ("address", "contact_name"):
+        if key in fixture:
+            assert _squash(fixture[key]) in _squash(getattr(u, key) or ""), (key, getattr(u, key))
+        elif fixture["intent"] != "give_details":
+            assert getattr(u, key) is None, (key, getattr(u, key))
+
+
+def _squash(text: str) -> str:
+    return "".join(ch for ch in text.lower() if ch.isalnum())
 
 
 # An offer worded the way the homeowner now reads it, with no numbers to answer with.
