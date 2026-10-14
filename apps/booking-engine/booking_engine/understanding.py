@@ -151,6 +151,12 @@ tore up our roof this morning, can someone come look", "storm last night, think 
 have damage").
 - pick_slot: chooses one of the currently offered slots, by number ("1", "the second \
 one") or by description ("tuesday works", "the morning one"). Set slot_choice to its number.
+The homeowner is shown the offered slots as a plain sentence with no numbers ("I've got \
+Wednesday at 8 AM or Thursday at noon"), so they usually answer with a piece of one slot: \
+its day ("Wednesday", "Thursday's better"), its time ("8 works", "noon is good"), or its \
+position in the sentence ("the first one", "the later one"). When the day or time they \
+give matches exactly one offered slot, that is pick_slot for that slot, not propose_time, \
+and preferred_date / preferred_time_window stay null.
 - propose_time: names their own day and/or time that is NOT simply one of the offered \
 slots ("can u do saturday", "tmrw after 3"). Rejecting the offered times while naming \
 another day or time is propose_time, not none_work ("neither, how about friday", \

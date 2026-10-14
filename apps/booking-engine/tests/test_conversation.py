@@ -87,7 +87,7 @@ async def test_handoff_tags_and_note_with_last_six_messages(h: Harness):
     assert "Reason: human_request" in note
     lines = note.split("\n\n", 1)[1].splitlines()
     assert len(lines) == 6
-    assert lines[-2] == "homeowner: can someone call me" and lines[-1].startswith("engine: Thanks!")
+    assert lines[-2] == "homeowner: can someone call me" and lines[-1].startswith("engine: Thanks.")
 
 
 async def test_emergency_is_an_urgent_handoff(h: Harness):
@@ -125,7 +125,7 @@ async def test_second_none_work_asks_for_their_preference_then_treats_answer_as_
     assert h.conv.awaiting_preference and h.conv.current_offer == []
     # Whatever the model calls it, a named day after ask_preference is a proposal.
     result = await h.say("thursday", U("unclear", preferred_date=dt.date(2026, 10, 8)))
-    assert result.template_key == "propose_time_match" and "Thu 10/8" in result.reply
+    assert result.template_key == "propose_time_match" and "Thursday at " in result.reply
 
 
 async def test_yes_to_lock_that_in_books_the_proposed_time(h: Harness):
@@ -133,7 +133,7 @@ async def test_yes_to_lock_that_in_books_the_proposed_time(h: Harness):
         "propose_time", preferred_date=dt.date(2026, 10, 10), preferred_time_window="morning"))
     assert proposed.template_key == "propose_time_match"
     result = await h.say("yes", U("affirm"))
-    assert result.template_key == "booked" and "Sat 10/10 at 9:00 AM" in result.reply
+    assert result.template_key == "booked" and "Saturday at 9 AM" in result.reply
 
 
 async def test_bare_yes_to_two_options_asks_which_one(h: Harness):
@@ -141,12 +141,12 @@ async def test_bare_yes_to_two_options_asks_which_one(h: Harness):
     result = await h.say("yes", U("affirm"))
     assert result.template_key == "which_one" and not h.calendar.appointments
     assert result.reply == (
-        "Great! Which works better: Mon 10/5 at 11:00 AM or Tue 10/6 at 12:00 PM?"
+        "Sure thing. Which one's better for you, Monday at 11 AM or Tuesday at noon?"
     )
     assert h.conv.unclear_streak == 0 and h.conv.status == "slots_offered"
     # Same two slots stay on the table, so "2" still books the second one.
     booked = await h.say("2", U("pick_slot", slot_choice=2))
-    assert booked.template_key == "booked" and "Tue 10/6 at 12:00 PM" in booked.reply
+    assert booked.template_key == "booked" and "Tuesday at noon" in booked.reply
 
 
 async def test_max_eight_messages_without_booking_then_handoff(h: Harness):
@@ -177,7 +177,7 @@ async def test_every_turn_is_stored_for_review(h: Harness):
     opening, first, second = h.store.turns(h.conv.id)
     assert (opening.template_key, opening.inbound_text) == ("opening_missed_call", "")
     assert (first.inbound_text, first.intent, first.template_key) == ("yes", "affirm", "offer_slots")
-    assert first.model_output["confidence"] == 0.95 and first.outbound_text.startswith("Great!")
+    assert first.model_output["confidence"] == 0.95 and first.outbound_text.startswith("Great,")
     assert second.booking_result["action"] == "booked" and second.status_after == "booked"
     assert [c["call"] for c in second.crm_calls] == ["send_sms", "set_stage", "add_tags"]
 
@@ -296,8 +296,8 @@ async def test_question_topic_chooses_basic_who_or_basic_area(h: Harness, text, 
 async def test_other_topic_defers_to_the_inspector_with_two_slots(h: Harness):
     result = await h.say("what are your hours", U("basic_question", question_topic="other"))
     assert result.reply == (
-        "Good question. Your inspector will go over that with you on-site, since it depends on "
-        "what they find. Does Mon 10/5 at 11:00 AM or Tue 10/6 at 12:00 PM work better?"
+        "Good question. Your inspector will go over that with you in person, since it depends on "
+        "what they find. Would Monday at 11 AM or Tuesday at noon work better?"
     )
     assert len(h.conv.current_offer) == 2
 
@@ -444,7 +444,7 @@ async def test_neither_plus_a_day_offers_that_day_instead_of_just_more_slots(h: 
     await h.reach("offered")
     result = await h.say("neither, how about friday",
                          U("none_work", preferred_date=dt.date(2026, 10, 9)))
-    assert result.template_key == "propose_time_match" and result.reply.startswith("Fri 10/9 at ")
+    assert result.template_key == "propose_time_match" and result.reply.startswith("Friday at ")
 
 
 async def test_yes_plus_a_time_window_is_a_proposal_not_a_generic_offer(h: Harness):
@@ -476,8 +476,8 @@ async def test_low_confidence_still_wins_over_a_named_day(h: Harness):
 # --- opening message: the model must know what a first reply is answering ------
 
 MISSED_CALL_OPENING = (
-    "Hi, this is Roof Demo. Sorry we missed your call! Is this about a roof inspection? "
-    "Reply YES and we'll get you on the schedule. Reply STOP to opt out."
+    "Hey, it's Roof Demo. Sorry we missed your call! Is this about your roof? "
+    "I can get an inspector out this week if you'd like. (Reply STOP to opt out)"
 )
 
 
@@ -560,7 +560,7 @@ def test_opening_templates_are_required_and_configured():
 @pytest.mark.parametrize(
     "argv, source, opening_starts",
     [
-        ([], "missed_call", "Hi, this is Roof Demo. Sorry we missed your call!"),
+        ([], "missed_call", "Hey, it's Roof Demo. Sorry we missed your call!"),
         (["--lead-source", "web_form"], "web_form", "Hi, this is Roof Demo. Thanks for requesting"),
     ],
 )
@@ -607,5 +607,5 @@ async def test_two_questions_in_a_row_get_different_deflect_wording(h: Harness):
     assert [r.template_key for r in (first, second, third)] == ["deflect", "deflect_again", "deflect"]
     assert first.reply != second.reply and second.reply != third.reply
     # The same two times stay on the table throughout.
-    assert all("Mon 10/5 at 11:00 AM" in r.reply and "Tue 10/6 at 12:00 PM" in r.reply
+    assert all("Monday at 11 AM" in r.reply and "Tuesday at noon" in r.reply
                for r in (first, second, third))

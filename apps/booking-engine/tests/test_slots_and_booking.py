@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from booking_engine.calendar.base import CalendarError
-from booking_engine.slots import eligible, format_slot, pick_spread, slot_key
+from booking_engine.slots import eligible, format_slot, friendly_slot, pick_spread, slot_key
 from tests.conftest import NOW, SLOT_1, SLOT_2, TZ, Harness, U
 
 
@@ -24,6 +24,32 @@ def test_slot_format():
     assert format_slot(datetime(2026, 10, 7, 10, 0, tzinfo=TZ), TZ) == "Wed 10/7 at 10:00 AM"
     assert format_slot(datetime(2026, 10, 6, 15, 0, tzinfo=dt.UTC), TZ) == "Tue 10/6 at 10:00 AM"
     assert format_slot(at(12, 12), TZ) == "Mon 10/12 at 12:00 PM"
+
+
+def test_homeowner_facing_slot_wording():
+    """Weekday and a plain time; the date only when the slot is more than 6 days out."""
+    assert friendly_slot(at(7, 8), TZ, NOW) == "Wednesday at 8 AM"
+    assert friendly_slot(at(8, 12), TZ, NOW) == "Thursday at noon"
+    assert friendly_slot(datetime(2026, 10, 6, 15, 30, tzinfo=TZ), TZ, NOW) == "Tuesday at 3:30 PM"
+    assert friendly_slot(datetime(2026, 10, 6, 15, 0, tzinfo=dt.UTC), TZ, NOW) == "Tuesday at 10 AM"
+    assert friendly_slot(at(11, 9), TZ, NOW) == "Sunday at 9 AM"             # 6 days out
+    assert friendly_slot(at(12, 9), TZ, NOW) == "Monday 10/12 at 9 AM"       # 7 days out
+    assert friendly_slot(at(12, 12), TZ, NOW) == "Monday 10/12 at noon"
+    # Counted in calendar days in the client's timezone, not in hours.
+    assert friendly_slot(at(12, 8), TZ, NOW.replace(hour=23)) == "Monday 10/12 at 8 AM"
+
+
+async def test_a_slot_a_week_out_is_offered_with_its_date(h: Harness):
+    for day in range(5, 12):
+        for hour in range(8, 17):
+            h.calendar.take(at(day, hour))            # nothing open before next Monday
+    result = await h.say("yes", U("affirm"))
+    assert offer(h) == [at(12, 8), at(12, 9)]
+    assert result.reply == (
+        "Great, I've got Monday 10/12 at 8 AM or Monday 10/12 at 9 AM. Which works better?"
+    )
+    booked = await h.say("the first one", U("pick_slot", slot_choice=1))
+    assert booked.reply.startswith("You're all set for Monday 10/12 at 8 AM.")
 
 
 def test_eligible_respects_lead_time_window_and_exclusions():
@@ -45,8 +71,7 @@ async def test_only_calendar_slots_are_offered_inside_lead_time_and_window(h: Ha
     result = await h.say("yes", U("affirm"))
     slots = offer(h)
     assert slots == [SLOT_1, SLOT_2]
-    assert result.reply.startswith("Great! I can get an inspector out Mon 10/5 at 11:00 AM or "
-                                   "Tue 10/6 at 12:00 PM.")
+    assert result.reply.startswith("Great, I've got Monday at 11 AM or Tuesday at noon.")
     free = await h.calendar.free_slots(NOW, NOW + timedelta(days=7))
     assert all(s in free and NOW + timedelta(minutes=120) <= s <= NOW + timedelta(days=7)
                for s in slots)
@@ -88,7 +113,7 @@ async def test_propose_time_offers_matches_inside_the_requested_window(h: Harnes
         "propose_time", preferred_date=dt.date(2026, 10, 6), preferred_time_window="after 15:00"))
     assert result.template_key == "propose_time_match"
     assert offer(h) == [at(6, 15), at(6, 16)]
-    assert result.reply.startswith("Tue 10/6 at 3:00 PM is open.")
+    assert result.reply.startswith("Tuesday at 3 PM is open.")
 
 
 async def test_propose_time_with_nothing_open_offers_the_closest_openings(h: Harness):
@@ -108,8 +133,8 @@ async def test_booking_creates_a_60_minute_appointment_and_updates_the_crm(h: Ha
     assert appointment.title == "Roof inspection: Jane Doe"
     assert appointment.contact_id == "contact-1"
     assert result.reply == (
-        "You're all set for Tue 10/6 at 12:00 PM. Your Roof Demo inspector will meet you at "
-        "the property. Reply here if anything changes."
+        "You're all set for Tuesday at noon. Our inspector will meet you at the house. "
+        "Just text here if anything changes."
     )
     conv = h.conv
     assert (conv.status, conv.appointment_id, conv.booked_time) == (
@@ -170,7 +195,7 @@ async def test_reschedule_moves_the_existing_appointment(h: Harness):
     result = await h.say("1", U("pick_slot", slot_choice=1))
     (appointment,) = h.calendar.appointments.values()
     assert result.booking["action"] == "rescheduled" and appointment.slot == new_slot
-    assert format_slot(new_slot, TZ) in result.reply
+    assert friendly_slot(new_slot, TZ, NOW) in result.reply
     assert await h.calendar.is_free(SLOT_1)           # the old time opened back up
 
 
@@ -199,7 +224,7 @@ async def test_booked_plus_a_different_day_moves_the_one_appointment(h: Harness,
 
     proposed = await h.say("can we do wednesday instead", misread)
     assert proposed.template_key == "propose_time_match" and proposed.booking is None
-    assert proposed.reply.startswith("Wed 10/7 at ")
+    assert proposed.reply.startswith("Wednesday at ")
     assert len(h.calendar.appointments) == 1 and original.slot == SLOT_1     # nothing changed yet
 
     confirmed = await h.say("yes", U("affirm"))
@@ -207,7 +232,7 @@ async def test_booked_plus_a_different_day_moves_the_one_appointment(h: Harness,
     assert len(h.calendar.appointments) == 1                  # moved, never a second appointment
     (appointment,) = live_appointments(h)
     assert appointment.id == original.id == h.conv.appointment_id
-    assert appointment.slot.date() == WEDNESDAY and "Wed 10/7" in confirmed.reply
+    assert appointment.slot.date() == WEDNESDAY and "Wednesday at " in confirmed.reply
     assert await h.calendar.is_free(SLOT_1)                   # Monday opened back up
 
 
@@ -234,7 +259,7 @@ async def test_second_none_work_during_a_reschedule_asks_for_their_preference(h:
     asked = await h.say("no those dont work either", U("none_work"))   # second in a row
     assert asked.template_key == "ask_preference"
     assert asked.reply == (
-        "No problem. What day and time work best for you? I'll find the closest opening."
+        "No worries. What day and time would work for you? I'll see what's closest."
     )
     conv = h.conv
     assert conv.awaiting_preference and conv.current_offer == [] and conv.status == "booked"
@@ -243,7 +268,7 @@ async def test_second_none_work_during_a_reschedule_asks_for_their_preference(h:
     # Their answer is a proposal whatever the model calls it — and still a reschedule.
     proposed = await h.say("thursday afternoon", U(
         "unclear", preferred_date=dt.date(2026, 10, 8), preferred_time_window="afternoon"))
-    assert proposed.template_key == "propose_time_match" and "Thu 10/8" in proposed.reply
+    assert proposed.template_key == "propose_time_match" and "Thursday at " in proposed.reply
     assert proposed.booking is None and len(h.calendar.appointments) == 1
 
     moved = await h.say("yes", U("affirm"))
@@ -323,7 +348,7 @@ async def test_cancel_cancels_the_appointment_confirms_and_notifies(h: Harness):
     assert "engine-handoff" not in h.gateway.tags_added()
     (note,) = h.gateway.notes()
     assert note.startswith("Booking engine: the homeowner cancelled their inspection by text.")
-    assert "homeowner: can we cancel monday" in note and "engine: Your inspection is cancelled" in note
+    assert "homeowner: can we cancel monday" in note and "engine: Okay, I've cancelled your inspection" in note
 
 
 async def test_reschedule_to_a_different_day_never_offers_the_booked_day():
@@ -331,10 +356,10 @@ async def test_reschedule_to_a_different_day_never_offers_the_booked_day():
     for h in (plain, different):
         await h.reach("booked")                               # booked Mon 10/5 at 11:00 AM
     same_day_ok = await plain.say("can we move it", U("reschedule"))
-    assert same_day_ok.template_key == "reschedule" and "Mon 10/5" in same_day_ok.reply
+    assert same_day_ok.template_key == "reschedule" and "Monday at " in same_day_ok.reply
 
     moved = await different.say("need a different day", U("reschedule", different_day=True))
-    assert moved.template_key == "reschedule" and "Mon 10/5" not in moved.reply
+    assert moved.template_key == "reschedule" and "Monday at " not in moved.reply
     assert len(different.calendar.appointments) == 1 and different.conv.status == "booked"
 
 
@@ -342,4 +367,4 @@ async def test_a_different_day_with_a_time_of_day_also_skips_the_booked_day(h: H
     await h.reach("booked")                                   # booked Mon 10/5 at 11:00 AM
     result = await h.say("another day, afternoon is better", U(
         "reschedule", different_day=True, preferred_time_window="afternoon"))
-    assert result.template_key == "propose_time_match" and "Mon 10/5" not in result.reply
+    assert result.template_key == "propose_time_match" and "Monday at " not in result.reply

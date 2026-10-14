@@ -13,6 +13,8 @@ import pytest
 from anthropic.types import JSONOutputFormatParam
 
 from booking_engine.settings import APP_ROOT, Settings
+from booking_engine.slots import friendly_slot
+from booking_engine.templates import Templates
 from booking_engine.understanding import (
     INTENTS,
     MIN_CONFIDENCE,
@@ -308,6 +310,59 @@ async def test_live_model_classifies_fixture(fixture):
         assert u.question_topic is None
     if "preferred_date" in fixture:
         assert u.preferred_date == dt.date.fromisoformat(fixture["preferred_date"])
+
+
+# An offer worded the way the homeowner now reads it, with no numbers to answer with.
+WEDNESDAY_8 = dt.datetime(2026, 10, 14, 8, 0, tzinfo=NOW.tzinfo)
+THURSDAY_NOON = dt.datetime(2026, 10, 15, 12, 0, tzinfo=NOW.tzinfo)
+NATURAL_PICKS = [
+    ("Wednesday", 1), ("the first one", 1), ("8 works", 1), ("Thursday's better", 2),
+    ("thursday", 2), ("noon is good", 2), ("the second one works", 2), ("wed is fine", 1),
+]
+
+
+def _unnumbered_offer_context(text: str) -> TurnContext:
+    now = dt.datetime(2026, 10, 13, 19, 0, tzinfo=NOW.tzinfo)        # a Tuesday evening
+    templates = Templates.load()
+    opening = templates.render("opening_missed_call", {"company_name": "Roof Demo"}).text
+    offer = templates.render("offer_slots", {
+        "slot_1": friendly_slot(WEDNESDAY_8, now.tzinfo, now),
+        "slot_2": friendly_slot(THURSDAY_NOON, now.tzinfo, now),
+    }).text
+    return TurnContext(
+        message=text, now=now, status="slots_offered", offered=[WEDNESDAY_8, THURSDAY_NOON],
+        history=[
+            {"role": "engine", "text": opening},
+            {"role": "homeowner", "text": "Yes please, we got hit by hail last night"},
+            {"role": "engine", "text": offer},
+        ],
+    )
+
+
+def test_unnumbered_offer_context_shows_the_wording_the_homeowner_read():
+    content = build_user_content(_unnumbered_offer_context("Wednesday"))
+    assert "engine: Great, I've got Wednesday at 8 AM or Thursday at noon. Which works better?" in content
+    assert "1. Wed 10/14 at 8:00 AM" in content and "2. Thu 10/15 at 12:00 PM" in content
+
+
+@pytest.mark.live
+@pytest.mark.parametrize("text, choice", NATURAL_PICKS)
+async def test_live_model_reads_a_natural_answer_to_an_unnumbered_offer(text, choice):
+    api_key = Settings.from_env().anthropic_api_key
+    if not api_key:
+        pytest.skip("ANTHROPIC_API_KEY not set (put it in apps/booking-engine/.env)")
+    async with AnthropicUnderstander(api_key) as understander:
+        raw = await understander.understand(_unnumbered_offer_context(text))
+    u = apply_preference_rule(apply_confidence_rule(raw))
+    assert (u.intent, u.slot_choice) == ("pick_slot", choice), (
+        f"model said {raw.intent} slot {raw.slot_choice} ({raw.confidence}): {raw.notes}"
+    )
+
+
+def test_prompt_covers_answers_to_an_offer_without_numbers():
+    assert "shown the offered slots as a plain sentence with no numbers" in SYSTEM_PROMPT
+    for example in ('"Wednesday"', '"Thursday\'s better"', '"8 works"', '"the first one"'):
+        assert example in SYSTEM_PROMPT
 
 
 def test_settings_load_the_api_key_from_the_app_env_file(tmp_path, monkeypatch):

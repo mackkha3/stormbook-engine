@@ -8,34 +8,39 @@
 #   - none of: deductible, guarantee, insurance will, covered by insurance, free roof, waive
 #   - no dates or times except the {slot_N} / {booked_time} variables
 # A template that breaks a rule is rejected at startup.
+#
+# Voice: a friendly person in the office texting. Short sentences, contractions, one
+# question at a time. Never ask for a number or a keyword ("reply 1 or 2", "reply YES").
+# {slot_N} and {booked_time} read as "Wednesday at 8 AM" / "Thursday at noon"; the date
+# is added ("Wednesday 10/14 at 8 AM") only when the time is more than 6 days out.
 
-offer_slots: "Great! I can get an inspector out {slot_1} or {slot_2}. Which works better? Just reply 1 or 2."
-offer_more_slots: "No problem. How about {slot_1} or {slot_2}? Reply 1 or 2."
-ask_preference: "No problem. What day and time work best for you? I'll find the closest opening."
-propose_time_match: "{slot_1} is open. Want me to lock that in? Or {slot_2} also works."
-propose_time_no_match: "That time's taken, but I have {slot_1} or {slot_2}. Would either work?"
-booked: "You're all set for {booked_time}. Your {company_name} inspector will meet you at the property. Reply here if anything changes."
-deflect: "Good question. Your inspector will go over that with you on-site, since it depends on what they find. Does {slot_1} or {slot_2} work better?"
-deflect_again: "That's one for your inspector too. They can answer it properly once they've seen the roof. Would {slot_1} or {slot_2} work for you?"
-basic_who: "This is {company_name}. You called or reached out about a roof inspection. Want me to get one scheduled? I have {slot_1} or {slot_2}."
-basic_area: "We cover {service_area}. I can get an inspector out {slot_1} or {slot_2}. Which works?"
-is_bot: "I'm {company_name}'s automated scheduling assistant. A real inspector will meet you on-site. Does {slot_1} or {slot_2} work for you?"
-which_one: "Great! Which works better: {slot_1} or {slot_2}?"
-clarify: "Sorry, I didn't quite catch that. Would {slot_1} or {slot_2} work for your inspection?"
-reschedule: "No problem. I can move you to {slot_1} or {slot_2}. Which is better?"
-cancelled: "Your inspection is cancelled. If you change your mind, just text us here."
-handoff: "Thanks! Someone from {company_name} will follow up with you shortly."
-emergency: "If water is coming in right now, please call {company_phone} so we can help immediately. I'm alerting the team now."
-not_interested: "Understood, thanks for letting us know. If you ever need us, just text here."
-photo_received: "Thanks for the photo. Your inspector will take a look on-site. Does {slot_1} or {slot_2} work?"
-photo_received_booked: "Thanks for the photo. Your inspector will take a look on-site."
-no_slots_available: "Thanks! Someone from {company_name} will reach out shortly to find a time that works."
+offer_slots: "Great, I've got {slot_1} or {slot_2}. Which works better?"
+offer_more_slots: "No problem. How about {slot_1} or {slot_2}?"
+ask_preference: "No worries. What day and time would work for you? I'll see what's closest."
+propose_time_match: "{slot_1} is open. Want me to put you down for that? I've also got {slot_2}."
+propose_time_no_match: "I don't have that one open, but I've got {slot_1} or {slot_2}. Would either of those work?"
+booked: "You're all set for {booked_time}. Our inspector will meet you at the house. Just text here if anything changes."
+deflect: "Good question. Your inspector will go over that with you in person, since it depends on what they find. Would {slot_1} or {slot_2} work better?"
+deflect_again: "That's one for the inspector too. They'll be able to tell you once they've seen the roof. Does {slot_1} or {slot_2} work for you?"
+basic_who: "This is {company_name}. You reached out to us about a roof inspection. Want to get one on the calendar? I've got {slot_1} or {slot_2}."
+basic_area: "We cover {service_area}. I've got {slot_1} or {slot_2} open for an inspection. Which works better?"
+is_bot: "I'm an automated assistant that handles scheduling for {company_name}. A real inspector will meet you at the house. Would {slot_1} or {slot_2} work?"
+which_one: "Sure thing. Which one's better for you, {slot_1} or {slot_2}?"
+clarify: "Sorry, I didn't catch that. Would {slot_1} or {slot_2} work for the inspection?"
+reschedule: "No problem, I can move you to {slot_1} or {slot_2}. Which works better?"
+cancelled: "Okay, I've cancelled your inspection. If you change your mind, just text us here."
+handoff: "Thanks. Someone from {company_name} will be in touch with you shortly."
+emergency: "If water's coming in right now, please call {company_phone} so we can help right away. I'm letting the team know now."
+not_interested: "No problem, thanks for letting us know. If you ever need us, just text here."
+photo_received: "Thanks for the photo. Your inspector will take a look in person. Would {slot_1} or {slot_2} work?"
+photo_received_booked: "Thanks for the photo. Your inspector will take a look when they're out there."
+no_slots_available: "Thanks. Someone from {company_name} will reach out shortly to find a time that works."
 
 # --- Opening messages (sent by GHL, NOT by the engine) -------------------------
 # The first text of every conversation is sent by a GHL workflow, one per lead
 # source. The engine never sends these. They are copied here so the AI knows
 # what the homeowner's first reply is answering ("Yes please" = yes to what?).
 # KEEP THESE IN SYNC with the wording in the GHL workflows.
-opening_missed_call: "Hi, this is {company_name}. Sorry we missed your call! Is this about a roof inspection? Reply YES and we'll get you on the schedule. Reply STOP to opt out."
+opening_missed_call: "Hey, it's {company_name}. Sorry we missed your call! Is this about your roof? I can get an inspector out this week if you'd like. (Reply STOP to opt out)"
 # TODO(founder): placeholder only. Replace with the exact web-form opening text from GHL.
-opening_web_form: "Hi, this is {company_name}. Thanks for requesting a roof inspection! Reply YES and we'll get you on the schedule. Reply STOP to opt out."
+opening_web_form: "Hi, this is {company_name}. Thanks for requesting a roof inspection. Want me to get you on the schedule? Reply STOP to opt out."

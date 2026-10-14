@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from booking_engine.engine import PHOTO_NOTE, InboundMessage
-from booking_engine.slots import format_slot
-from tests.conftest import SLOT_1, SLOT_2, TZ, Harness, U
+from tests.conftest import Harness, U
 
 
 async def send_photo(h: Harness, body: str = ""):
@@ -16,8 +15,8 @@ async def test_a_photo_with_no_words_gets_the_photo_template_with_two_real_slots
     result = await send_photo(h)
     assert result.template_key == "photo_received" and result.intent == "photo"
     assert h.sent == [(
-        "Thanks for the photo. Your inspector will take a look on-site. "
-        f"Does {format_slot(SLOT_1, TZ)} or {format_slot(SLOT_2, TZ)} work?"
+        "Thanks for the photo. Your inspector will take a look in person. "
+        "Would Monday at 11 AM or Tuesday at noon work?"
     )]
     assert h.understander.contexts == []                  # the model was never asked
     assert h.gateway.notes() == [PHOTO_NOTE]
@@ -45,7 +44,7 @@ async def test_a_photo_after_booking_is_thanked_without_offering_slots(h: Harnes
     appointment = h.conv.appointment_id
     result = await send_photo(h)
     assert result.template_key == "photo_received_booked"
-    assert h.sent == ["Thanks for the photo. Your inspector will take a look on-site."]
+    assert h.sent == ["Thanks for the photo. Your inspector will take a look when they're out there."]
     assert h.gateway.notes() == [PHOTO_NOTE]
     assert h.conv.status == "booked" and h.conv.appointment_id == appointment
     assert h.conv.current_offer == []

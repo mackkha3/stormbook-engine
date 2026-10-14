@@ -104,7 +104,7 @@ async def test_engine_hands_off_instead_of_sending_an_unverified_time(h: Harness
     result = await h.say("yes", U("affirm"))
     assert result.template_key == "handoff"
     assert result.handoff_reason == "output_rejected:time_not_from_calendar"
-    assert h.sent == ["Thanks! Someone from Roof Demo will follow up with you shortly."]
+    assert h.sent == ["Thanks. Someone from Roof Demo will be in touch with you shortly."]
     assert h.conv.status == "handoff"
 
 

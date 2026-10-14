@@ -3,7 +3,8 @@
 #   text    what the homeowner sent
 #   state   where the conversation is when it arrives:
 #             fresh    GHL sent the first text; the engine has offered nothing yet
-#             offered  the engine offered  1. Mon 10/5 at 11:00 AM   2. Tue 10/6 at 12:00 PM
+#             offered  the engine offered  1. Mon 10/5 at 11:00 AM   2. Tue 10/6 at 12:00 PM,
+#                      which the homeowner read as "Monday at 11 AM or Tuesday at noon"
 #             asked    the engine asked "what day and time work best for you?"
 #             booked   an inspection is booked for Mon 10/5 at 11:00 AM
 #             cancelled  that inspection was booked, then cancelled by the homeowner
@@ -44,6 +45,15 @@
 - {text: "monday is good", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
 - {text: "first one pls", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
 - {text: "lets do the 11am", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
+# The offer no longer shows numbers, so the answer is usually a piece of one slot.
+- {text: "Tuesday", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
+- {text: "monday", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
+- {text: "the first one", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
+- {text: "11 works", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
+- {text: "noon works", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
+- {text: "Tuesday's better", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
+- {text: "Monday works better", state: offered, intent: pick_slot, slot_choice: 1, expect: booked}
+- {text: "the later one", state: offered, intent: pick_slot, slot_choice: 2, expect: booked}
 
 # --- propose_time ---------------------------------------------------------
 - {text: "can u do saturday", state: fresh, intent: propose_time, preferred_date: "2026-10-10", expect: propose_time_match}

@@ -185,8 +185,8 @@ async def test_a_picture_only_text_is_thanked_and_noted_on_the_contact(site: Sit
     response = await site.post({"location_id": LOCATION, "contact_id": "c1", "message_body": ""})
     assert response.json() == {"status": "accepted"}
     assert site.ghl.sent == [(
-        "Thanks for the photo. Your inspector will take a look on-site. "
-        "Does Mon 10/5 at 11:00 AM or Tue 10/6 at 3:00 PM work?"
+        "Thanks for the photo. Your inspector will take a look in person. "
+        "Would Monday at 11 AM or Tuesday at 3 PM work?"
     )]
     assert site.ghl.bodies("POST", "/notes") == [{"body": PHOTO_NOTE}]
     assert site.understander.contexts == []
@@ -198,7 +198,7 @@ async def test_a_picture_after_booking_is_thanked_without_slots(site: Site):
     await site.text("1", U("pick_slot", slot_choice=1))
     site.ghl.add_inbound("m-pic", "", attachments=PHOTO)
     await site.post({"location_id": LOCATION, "contact_id": "c1", "message_body": ""})
-    assert site.ghl.sent[-1] == "Thanks for the photo. Your inspector will take a look on-site."
+    assert site.ghl.sent[-1] == "Thanks for the photo. Your inspector will take a look when they're out there."
     assert site.conv.status == "booked" and len(site.ghl.appointments) == 1
 
 
@@ -251,8 +251,7 @@ async def test_first_reply_offers_real_slots_and_seeds_the_ghl_opening_text(site
     response = await site.text("yes", U("affirm"))
     assert response.json() == {"status": "accepted"}
     assert site.ghl.sent == [(
-        "Great! I can get an inspector out Mon 10/5 at 11:00 AM or Tue 10/6 at 3:00 PM. "
-        "Which works better? Just reply 1 or 2."
+        "Great, I've got Monday at 11 AM or Tuesday at 3 PM. Which works better?"
     )]
     # The model saw the opening message GHL actually sent, not the configured fallback.
     assert site.understander.contexts[0].history == [{"role": "engine", "text": OPENING}]
@@ -269,7 +268,7 @@ async def test_picking_a_slot_books_it_in_ghl_and_updates_the_crm(site: Site):
         "startTime": "2026-10-05T11:00:00-05:00", "endTime": "2026-10-05T12:00:00-05:00",
         "title": "Roof inspection: Jane Doe", "appointmentStatus": "confirmed",
     }
-    assert site.ghl.sent[-1].startswith("You're all set for Mon 10/5 at 11:00 AM.")
+    assert site.ghl.sent[-1].startswith("You're all set for Monday at 11 AM.")
     assert site.ghl.bodies("PUT", "/opportunities/opp-1")[-1]["pipelineStageId"] == "st-booked"
     assert "booked" in site.ghl.tags
     assert site.conv.status == "booked" and site.conv.appointment_id == "appt-1"
@@ -280,7 +279,7 @@ async def test_slot_taken_between_offer_and_pick_is_not_booked(site: Site):
     site.ghl.slots.remove(site.ghl.slots[0])              # someone else books Mon 11:00
     await site.text("1", U("pick_slot", slot_choice=1))
     assert site.ghl.appointments == {} and site.conv.status == "slots_offered"
-    assert site.ghl.sent[-1].startswith("That time's taken, but I have")
+    assert site.ghl.sent[-1].startswith("I don't have that one open, but I've got")
 
 
 async def test_reschedule_and_cancel_act_on_the_same_ghl_appointment(site: Site):
@@ -342,7 +341,7 @@ async def test_adding_engine_active_back_resumes_the_conversation(site: Site):
     site.ghl.tags.add("engine-active")                    # a human hands it back in GHL
 
     assert (await site.text("ok lets book it", U("affirm"))).json() == {"status": "accepted"}
-    assert site.ghl.sent[-1].startswith("Great! I can get an inspector out")
+    assert site.ghl.sent[-1].startswith("Great, I've got")
     assert site.conv.status == "slots_offered" and site.conv.handoff_reason is None
     assert "engine-handoff" not in site.ghl.tags          # so the next handoff alerts again
 
@@ -372,7 +371,7 @@ async def test_no_free_slots_in_ghl_hands_off(site: Site):
     await site.text("yes", U("affirm"))
     assert site.conv.status == "handoff" and "engine-handoff" in site.ghl.tags
     assert site.ghl.sent == [
-        "Thanks! Someone from Roof Demo will reach out shortly to find a time that works."
+        "Thanks. Someone from Roof Demo will reach out shortly to find a time that works."
     ]
 
 

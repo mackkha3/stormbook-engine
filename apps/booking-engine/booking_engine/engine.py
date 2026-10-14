@@ -26,7 +26,7 @@ from booking_engine.conversation import (
 from booking_engine.debounce import Debouncer
 from booking_engine.logger import get
 from booking_engine.models import BOOKED, HANDOFF, OPTED_OUT, STOPPED, Conversation
-from booking_engine.slots import format_slot, from_key
+from booking_engine.slots import format_slot, friendly_slot, from_key
 from booking_engine.store import Store
 from booking_engine.templates import (
     RenderedMessage,
@@ -230,38 +230,44 @@ class Engine:
         ):
             decision = handoff("max_messages_without_booking")
 
-        message, decision = self._render_safely(decision)
+        message, decision = self._render_safely(decision, now)
         await self._apply(conv, decision, message, history, text, result)
 
-    def _render_safely(self, decision: Decision) -> tuple[RenderedMessage | None, Decision]:
+    def _render_safely(
+        self, decision: Decision, now: datetime
+    ) -> tuple[RenderedMessage | None, Decision]:
         """Render the reply and run the output safety check; on failure, hand off instead."""
         if decision.template_key is None:
             return None, decision
         try:
-            return self._render(decision), decision
+            return self._render(decision, now), decision
         except (UnsafeOutput, TemplateError) as exc:
             reason = exc.reason if isinstance(exc, UnsafeOutput) else str(exc)
             log.error("output_rejected", extra={"template": decision.template_key, "why": reason})
             fallback = handoff(f"output_rejected:{reason}")
             fallback.booking = decision.booking
             try:
-                return self._render(fallback), fallback
+                return self._render(fallback, now), fallback
             except (UnsafeOutput, TemplateError):
                 fallback.template_key = None
                 return None, fallback
 
-    def _render(self, decision: Decision) -> RenderedMessage:
+    def _render(self, decision: Decision, now: datetime) -> RenderedMessage:
         tz, c = self.client.tz, self.client
+
+        def say(slot: datetime) -> str:
+            return friendly_slot(slot, tz, now)
+
         variables = {
             "company_name": c.company_name,
             "company_phone": c.company_phone,
             "service_area": c.service_area_text,
-            **{f"slot_{i}": format_slot(s, tz) for i, s in enumerate(decision.slots, start=1)},
+            **{f"slot_{i}": say(s) for i, s in enumerate(decision.slots, start=1)},
         }
         if decision.booked_time is not None:
-            variables["booked_time"] = format_slot(decision.booked_time, tz)
+            variables["booked_time"] = say(decision.booked_time)
         message = self.templates.render(decision.template_key, variables)
-        self.templates.check_output(message, [format_slot(s, tz) for s in decision.verified])
+        self.templates.check_output(message, [say(s) for s in decision.verified])
         return message
 
     async def _apply(
