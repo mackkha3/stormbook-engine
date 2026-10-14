@@ -36,6 +36,7 @@ photo_received: "Thanks for the photo. Your inspector will take a look in person
 photo_received_booked: "Thanks for the photo. Your inspector will take a look when they're out there."
 no_slots_available: "Thanks. Someone from {company_name} will reach out shortly to find a time that works."
 still_booked: "Hey, you're still on for {booked_time}. Want to keep that or move it?"
+kept: "Perfect, see you then."
 
 # --- Opening messages (sent by GHL, NOT by the engine) -------------------------
 # The first text of every conversation is sent by a GHL workflow, one per lead

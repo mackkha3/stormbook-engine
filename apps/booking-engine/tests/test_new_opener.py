@@ -201,12 +201,24 @@ async def test_booked_ahead_a_yes_to_the_opener_gets_a_reminder_not_silence(site
     assert site.ghl.sent[-1] == STILL_ON
     assert site.conv.status == "booked" and len(site.ghl.appointments) == 1
 
+    await reply(site, "keep it", U("affirm"), after=30)
+    assert site.ghl.sent[-1] == "Perfect, see you then."
+
     sent = len(site.ghl.sent)
-    await reply(site, "keep it, thanks", U("affirm", acknowledgment_only=True), after=30)
+    await reply(site, "thanks!", U("affirm", acknowledgment_only=True), after=30)
     assert len(site.ghl.sent) == sent                         # the usual "ok" after booking
 
     await reply(site, "actually can we move it", U("reschedule"), after=30)
     assert site.ghl.sent[-1].startswith("No problem, I can move you to")
+
+
+async def test_move_it_after_the_reminder_reschedules_instead_of_perfect(site: Site):
+    await book(site)
+    opener(site, datetime(2026, 10, 5, 9, 30, tzinfo=TZ))
+    await reply(site, "Yes", U("affirm"))
+    await reply(site, "can we do later in the week", U("reschedule"), after=30)
+    assert site.ghl.sent[-1].startswith("No problem, I can move you to")
+    assert "Perfect, see you then." not in site.ghl.sent
 
 
 async def test_booked_ahead_moving_it_after_the_reminder_moves_the_same_appointment(site: Site):

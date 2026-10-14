@@ -13,6 +13,8 @@ from booking_engine.slots import eligible, from_key, slot_key
 from booking_engine.templates import Templates
 from booking_engine.understanding import Understanding
 
+OPENING_PREFIX = "opening_"   # template_key of a seeded opener turn: opening_<source|from_ghl>
+
 
 @dataclass(frozen=True)
 class Contact:
@@ -85,11 +87,16 @@ class Turn:
     prev_unclear: int = 0
     prev_none_work: int = 0
     avoid_date: date | None = None       # booked day the homeowner asked to move away from
-    after_opener: bool = False           # replying to a GHL opener, not to the engine
+    last_sent: str | None = None         # template key of the last turn (opening_*: an opener)
 
     @property
     def current(self) -> list[datetime]:
         return [from_key(k, self.client.tz) for k in self.conv.current_offer]
+
+    @property
+    def after_opener(self) -> bool:
+        """Replying to a GHL opener (seeded into the history, never sent by the engine)."""
+        return bool(self.last_sent and self.last_sent.startswith(OPENING_PREFIX))
 
     @property
     def has_preference(self) -> bool:

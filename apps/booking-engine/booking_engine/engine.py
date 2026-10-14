@@ -38,7 +38,15 @@ from booking_engine.templates import (
     UnsafeOutput,
     static_violation,
 )
-from booking_engine.turn import Contact, Decision, InboundMessage, Turn, TurnResult, handoff
+from booking_engine.turn import (
+    OPENING_PREFIX,
+    Contact,
+    Decision,
+    InboundMessage,
+    Turn,
+    TurnResult,
+    handoff,
+)
 from booking_engine.understanding import (
     TurnContext,
     Understander,
@@ -54,7 +62,6 @@ log = get(__name__)
 MAX_ENGINE_MESSAGES = 8      # without a booking; the next reply becomes a handoff
 NOTE_MESSAGES = 6
 PHOTO_TEXT = "[photo]"       # stands in for a picture-only text in history, notes and logs
-OPENING_PREFIX = "opening_"   # template_key of a seeded opener turn: opening_<source|from_ghl>
 PHOTO_NOTE = (
     "Booking engine: the homeowner sent a photo by text. It is in their GHL conversation."
 )
@@ -185,12 +192,10 @@ class Engine:
         )
         return key, text
 
-    def _after_opener(self, conv: Conversation) -> bool:
-        """True if the last thing in the conversation is an opener (seeded, never sent)."""
+    def _last_sent(self, conv: Conversation) -> str | None:
+        """Template key of the last turn: what the homeowner is answering, if anything."""
         last = self.store.last_turn(conv.id)
-        return last is not None and not last.inbound_text and bool(
-            last.template_key and last.template_key.startswith(OPENING_PREFIX)
-        )
+        return last.template_key if last is not None else None
 
     def opening_message(self, contact: Contact) -> tuple[str, str]:
         """(source key, text) of the opening message this contact was sent.
@@ -212,7 +217,7 @@ class Engine:
         tz = self.client.tz
         now = self._clock().astimezone(tz)
         history = self.store.recent_messages(conv.id, NOTE_MESSAGES)
-        after_opener = self._after_opener(conv)
+        last_sent = self._last_sent(conv)
 
         # An opt-out keyword is honoured in every state, even after a handoff or a close.
         opt_out = keyword_opt_out(bodies)
@@ -229,7 +234,7 @@ class Engine:
             decision = await decide_photo(
                 Turn(conv=conv, u=None, text=text, client=self.client,
                      calendar=self.calendar, templates=self.templates, now=now,
-                     after_opener=after_opener)
+                     last_sent=last_sent)
             )
         else:
             try:
@@ -257,7 +262,7 @@ class Engine:
                 decision = await decide(
                     Turn(conv=conv, u=u, text=text, client=self.client,
                          calendar=self.calendar, templates=self.templates, now=now,
-                         after_opener=after_opener)
+                         last_sent=last_sent)
                 )
 
         if (

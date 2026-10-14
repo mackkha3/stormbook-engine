@@ -36,6 +36,7 @@ REQUIRED_TEMPLATES = {
     "propose_time_no_match", "booked", "deflect", "deflect_again", "basic_who", "basic_area", "is_bot",
     "which_one", "clarify", "reschedule", "cancelled", "handoff", "emergency", "not_interested",
     "no_slots_available", "photo_received", "photo_received_booked", "still_booked",
+    "kept",
 }
 # Opening texts GHL sends, one per lead source (templates.yaml: opening_<lead_source>).
 # Never sent by the engine; used to seed a new conversation's history.
@@ -202,6 +203,8 @@ async def _decide(t: Turn) -> Decision:
                 if t.after_opener:
                     # "Yes" to a new opener while still booked: remind them, don't go quiet.
                     return _still_booked(t)
+                if t.last_sent == "still_booked":
+                    return Decision(template_key="kept")     # "keep it" to the reminder
                 return Decision()    # "ok thanks" after the confirmation needs no reply
             if not conv.current_offer:
                 return handoff(f"{intent}_after_booking")
