@@ -87,6 +87,10 @@ def configure() -> None:
         lg.handlers = []
         lg.propagate = True
 
+    # httpx logs every request URL at INFO, and the Meta Graph URL carries the
+    # page access token in its query string.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
     _configured = True
 
 

@@ -19,8 +19,10 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
+from pydantic import ValidationError
 
 from intake_api.lib.errors import ApiException
 from intake_api.lib.logger import get
@@ -40,7 +42,12 @@ async def meta_verify(
     hub_challenge: str = Query(default="", alias="hub.challenge"),
 ) -> PlainTextResponse:
     expected = os.environ.get("META_VERIFY_TOKEN", "")
-    if hub_mode == "subscribe" and expected and hmac.compare_digest(hub_verify_token, expected):
+    # Bytes, not str: compare_digest raises TypeError on non-ASCII str.
+    if (
+        hub_mode == "subscribe"
+        and expected
+        and hmac.compare_digest(hub_verify_token.encode("utf-8"), expected.encode("utf-8"))
+    ):
         return PlainTextResponse(hub_challenge)
     raise HTTPException(status_code=403, detail="verification failed")
 
@@ -105,7 +112,7 @@ async def meta_webhook(
                     extra={
                         "request_id": request_id,
                         "leadgen_id": leadgen_id,
-                        "error": str(exc),
+                        "error": _safe_error(exc),
                     },
                 )
 
@@ -122,12 +129,26 @@ def _verify_signature(secret: str, body: bytes, header_value: str | None) -> boo
         return False
     expected = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
     provided = header_value[len("sha256=") :]
-    return hmac.compare_digest(expected, provided)
+    # Bytes, not str: compare_digest raises TypeError on non-ASCII str.
+    return hmac.compare_digest(expected.encode("utf-8"), provided.encode("utf-8"))
+
+
+def _safe_error(exc: Exception) -> str:
+    """Describe a failure for logs. Never str(exc): httpx errors embed the
+    request URL, and the Graph URL carries the page access token."""
+    name = type(exc).__name__
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"{name}: Graph API returned {exc.response.status_code}"
+    if isinstance(exc, ValidationError):
+        fields = ", ".join(".".join(str(p) for p in e["loc"]) for e in exc.errors())
+        return f"{name}: invalid fields: {fields}"
+    return name
 
 
 async def _fetch_meta_lead(http: Any, leadgen_id: str) -> dict[str, Any]:
     access_token = os.environ.get("META_PAGE_ACCESS_TOKEN", "")
     if not access_token:
+        log.error("meta_page_token_missing", extra={"leadgen_id": leadgen_id})
         raise RuntimeError("META_PAGE_ACCESS_TOKEN not set")
     url = f"{META_GRAPH_URL}/{leadgen_id}"
     params = {"access_token": access_token, "fields": "field_data,created_time,form_id"}

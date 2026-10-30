@@ -82,6 +82,7 @@ Railway and test there — it's faster.
 | `TWILIO_ACCOUNT_SID` | yes | Console → Account Info |
 | `TWILIO_AUTH_TOKEN` | yes | Live credential. Rotate if it ever hits a screen share. |
 | `TWILIO_FROM_NUMBER` | yes | E.164, the provisioned number |
+| `TWILIO_SIGNATURE_VERIFICATION` | no | Default `on`. Set to `off` only for local dev with hand-POSTed inbound messages; every bypassed request logs a warning. |
 | `CORS_ORIGINS` | no | Comma-separated. Default `http://localhost:4323,http://127.0.0.1:4323` |
 | `ENVIRONMENT` | no | `development` \| `production` |
 | `LOG_LEVEL` | no | Default `INFO` |

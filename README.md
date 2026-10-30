@@ -10,11 +10,7 @@ terminal, results stay on your laptop.
 stormbook-engine/
 ├── README.md              ← you are here
 ├── spec.md                ← source of truth (v1, locked for first 10 pilots)
-└── prompts/
-    ├── 0-scaffolding.md   ← project structure + tooling setup
-    ├── 1-intake-form.md   ← §5.1 build (demo-ready by Week 1)
-    ├── 2-demo-dashboard.md ← §5.3 build (demo-ready by Week 2)
-    └── 3-intake-api.md    ← §5.2 build (production by Week 3)
+└── apps/                  ← the services and front ends, one folder each
 ```
 
 ## Prerequisites — one-time host setup
@@ -68,12 +64,12 @@ same project directory. Each prompt is self-contained and assumes
 Claude Code has access to `./spec.md` for any details not in the
 prompt itself.
 
-| # | When | Run prompt | Verify before next |
+| # | When | Build | Verify before next |
 |---|---|---|---|
-| 0 | First | `prompts/0-scaffolding.md` | `ls` shows the expected directory tree |
-| 1 | Week 1 (before Day 15 launch) | `prompts/1-intake-form.md` | Open `apps/intake-form/index.html` locally, submit a test → fills mock log |
-| 2 | Week 2 (after first demo) | `prompts/2-demo-dashboard.md` | Open `apps/demo-dashboard/index.html` → charts render with mock data |
-| 3 | Week 3 (before first pilot deploys) | `prompts/3-intake-api.md` | `npm run dev` in `apps/intake-api/`, POST test lead, confirm GHL contact created |
+| 0 | First | Project structure + tooling setup | `ls` shows the expected directory tree |
+| 1 | Week 1 (before Day 15 launch) | Intake form (§5.1) | Open `apps/intake-form/index.html` locally, submit a test → fills mock log |
+| 2 | Week 2 (after first demo) | Demo dashboard (§5.3) | Open `apps/demo-dashboard/index.html` → charts render with mock data |
+| 3 | Week 3 (before first pilot deploys) | Intake API (§5.2) | `npm run dev` in `apps/intake-api/`, POST test lead, confirm GHL contact created |
 
 Order is deliberate: form + dashboard come first because both are
 demo-critical. The API is production-critical, not demo-critical, so
@@ -84,7 +80,7 @@ it can wait until you have a paying pilot.
 ```
 $ cd ~/code/stormbook-engine
 $ claude
-> [paste the full contents of prompts/N-*.md]
+> [paste the full build brief for this component]
 [Claude Code builds]
 $ # inspect the files it created
 $ # run the verification step from the prompt

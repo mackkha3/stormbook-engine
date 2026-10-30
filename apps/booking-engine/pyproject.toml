@@ -20,6 +20,7 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    "pytest-cov>=5.0",
     "ruff>=0.7",
 ]
 
@@ -45,3 +46,20 @@ markers = [
     "live: calls the real Anthropic API (needs ANTHROPIC_API_KEY; run with `-m live`)",
 ]
 addopts = "-m 'not live'"
+
+[tool.coverage.run]
+source = ["booking_engine"]
+omit = [
+    "*/tests/*",
+    "*/__init__.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+show_missing = true
+skip_covered = false

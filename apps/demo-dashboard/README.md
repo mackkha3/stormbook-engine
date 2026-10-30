@@ -98,6 +98,3 @@ this is a demo, not a scheduler.
   does **not** swap datasets. Tooltip on the selector documents this.
 - No analytics or tracking.
 - No print stylesheet. It's for screen-share, not print.
-
-See `prompts/2-demo-dashboard.md` for the original build brief and the
-full "do NOT do" list.

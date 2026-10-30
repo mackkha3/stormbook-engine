@@ -67,7 +67,8 @@ async def lifespan(app: FastAPI):
     app.state.templates = Templates.load()
     app.state.templates.require(REQUIRED_TEMPLATES)
     app.state.clients = load_all_clients(require_live=True)
-    app.state.store = Store(init_db(make_engine(settings.database_url)))
+    db_engine = make_engine(settings.database_url)
+    app.state.store = Store(init_db(db_engine))
     async with (
         httpx.AsyncClient() as http,
         AnthropicUnderstander(settings.anthropic_api_key) as understander,
@@ -90,6 +91,7 @@ async def lifespan(app: FastAPI):
         # Finish the turns still inside their debounce window before the clients close.
         for runtime in app.state.runtimes.values():
             await runtime.engine.debouncer.drain()
+    db_engine.dispose()
     log.info("shutdown")
 
 

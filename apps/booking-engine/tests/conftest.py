@@ -15,6 +15,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 import yaml
+from sqlalchemy import Engine as SqlEngine
+from sqlalchemy import event
 
 from booking_engine.calendar.mock import MockCalendar
 from booking_engine.config_loader import load_client
@@ -33,6 +35,22 @@ SLOT_2 = datetime(2026, 10, 6, 12, 0, tzinfo=TZ)
 FIXTURES = yaml.safe_load(
     (Path(__file__).parent / "fixtures" / "homeowner_messages.yaml").read_text(encoding="utf-8")
 )
+
+
+@pytest.fixture(autouse=True)
+def dispose_sql_engines():
+    """Close every engine a test connected, wherever it was built, so no
+    in-memory SQLite connection outlives its test."""
+    engines: set[SqlEngine] = set()
+
+    def track(connection) -> None:
+        engines.add(connection.engine)
+
+    event.listen(SqlEngine, "engine_connect", track)
+    yield
+    event.remove(SqlEngine, "engine_connect", track)
+    for engine in engines:
+        engine.dispose()
 
 
 def U(intent: str, confidence: float = 0.95, **fields) -> Understanding:
