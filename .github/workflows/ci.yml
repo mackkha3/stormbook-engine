@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    name: Python tests · ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false  # one app failing shouldn't skip the others
+      matrix:
+        app:
+          - booking-engine
+          - demo-relay
+          - intake-api
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.11.21"  # pin to the same version operator uses locally
+          enable-cache: true
+          cache-dependency-glob: "apps/${{ matrix.app }}/uv.lock"
+      - name: Install dependencies
+        working-directory: apps/${{ matrix.app }}
+        run: uv sync --frozen
+      - name: Run tests with coverage
+        working-directory: apps/${{ matrix.app }}
+        run: uv run pytest --cov --cov-report=xml:coverage.xml --cov-report=term
+      - name: Upload coverage artifact
+        if: always()  # upload even if tests failed, for debugging
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.app }}
+          path: apps/${{ matrix.app }}/coverage.xml
+          retention-days: 14
+      - name: Run ruff
+        working-directory: apps/${{ matrix.app }}
+        run: uv run ruff check .
+
+  summary:
+    name: CI summary
+    needs: python-tests
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Report
+        run: |
+          if [ "${{ needs.python-tests.result }}" == "success" ]; then
+            echo "All Python app tests passed."
+          else
+            echo "One or more Python app jobs failed."
+            exit 1
+          fi

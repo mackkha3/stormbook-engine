@@ -1,5 +1,7 @@
 # Stormbook Engine — Build Kit
 
+[![CI](https://github.com/mackkha3/stormbook-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/mackkha3/stormbook-engine/actions/workflows/ci.yml)
+
 This kit is everything you need to build the Stormbook engine using Claude
 Code in your terminal. Files generated in the browser, executed in the
 terminal, results stay on your laptop.
