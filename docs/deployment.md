@@ -1,50 +1,26 @@
 # Deployment
 
-## Production environments
+Seven apps, two deploy targets. Each Python service is its own Railway service, deployed via Railpack from its `railpack.json`. Each static app is its own Netlify site with no build step.
 
-- Netlify — `intake-form` and `demo-dashboard` (static sites)
-- Railway — `intake-api` (Python 3.13 / FastAPI service, deployed via Railpack)
+## Railway — Python services
 
-## Domains and DNS
+Set each service's Root Directory to its app folder and its variables in Railway → Project → Variables. Each service's `.env.example` is the canonical template.
 
-- `intake.stormbook.ai` — intake form (Netlify)
-- `dash.stormbook.ai` — demo dashboard (Netlify)
-- `api.stormbook.ai` — intake API (CNAME → Railway-provided domain)
+**`apps/intake-api`** receives web form and Meta Lead Ads leads and forwards them to GoHighLevel. It serves `api.stormbook.ai` (CNAME → Railway-provided domain). It needs `META_VERIFY_TOKEN`, `META_APP_SECRET` and `META_PAGE_ACCESS_TOKEN` for the Meta webhook, `GOOGLE_MAPS_API_KEY` for geocoding, one `GHL_API_KEY_<CLIENT_ID>` per client (client_id uppercased, `-` → `_`), and `CORS_ORIGINS` in production. Per-client GHL location and custom field IDs live in `data/clients.json` (gitignored); use `data/clients.example.json` as the template.
 
-## Environment variables required per app
+**`apps/booking-engine`** reads homeowner replies and books inspections inside the text conversation. Run exactly one instance with one worker and serverless off, because follow-up texts are collected in memory before the engine answers. It uses Railway Postgres through `DATABASE_URL`, since SQLite is wiped on every deploy. Full steps, including the GHL webhook, are in [the deploy guide](../apps/booking-engine/docs/DEPLOY.md).
 
-### intake-form
+**`apps/demo-relay`** is the Twilio SMS bridge for live demos. It needs the Twilio credentials and sending number, `CORS_ORIGINS`, and `DEMO_ACCESS_TOKEN` to protect `POST /fire` in production. Leave `TWILIO_SIGNATURE_VERIFICATION` on anywhere real Twilio traffic can reach. Full steps, including the Twilio webhook and A2P 10DLC registration, are in [its README](../apps/demo-relay/README.md).
 
-No build-time env vars. Per-deploy runtime config lives in
-`apps/intake-form/config.json` (gitignored). Set:
+## Netlify — static apps
 
-- `apiBaseUrl` — `https://api.stormbook.ai`
-- `mock` — `false` in production
+**`apps/intake-form`** is the homeowner lead capture form at `intake.stormbook.ai`. Per-deploy config lives in `config.json` (gitignored): set `apiBaseUrl` to `https://api.stormbook.ai` and `mock` to `false` in production.
 
-### demo-dashboard
+**`apps/demo-form`** is the demo request form at `demo.stormbook.ai`, used to fire texts through demo-relay. Set `relayUrl` in `config.json` (gitignored) to the relay's Railway domain.
 
-None. Static, mock data only.
+**`apps/demo-dashboard`** is the metrics dashboard demo at `dash.stormbook.ai`. It runs on mock data and needs no configuration.
 
-### intake-api
-
-Set in Railway dashboard → Project → Variables. `.env.example` is the
-canonical template.
-
-| Var                          | Required | Purpose                                                          |
-|------------------------------|----------|------------------------------------------------------------------|
-| `PORT`                       | auto     | Injected by Railway. Locally defaults to 3000.                  |
-| `ENVIRONMENT`                | yes      | `production` in Railway, `development` locally.                  |
-| `LOG_LEVEL`                  | no       | `INFO` default, `DEBUG` for verbose runs.                        |
-| `GOOGLE_MAPS_API_KEY`        | yes      | Server-side Geocoding API key.                                   |
-| `META_VERIFY_TOKEN`          | yes      | Random ≥32-char string; same value goes in Meta's webhook UI.    |
-| `META_APP_SECRET`            | yes      | Meta App Secret — verifies `X-Hub-Signature-256` on POSTs.       |
-| `META_PAGE_ACCESS_TOKEN`     | yes      | Page access token for fetching lead details from Graph API.      |
-| `GHL_API_KEY_<CLIENT_ID>`    | per-client | One per pilot. Naming: client_id uppercased, `-` → `_`.        |
-| `CORS_ORIGINS`               | yes (prod) | Comma-separated allowed origins for browser POSTs. Defaults to `http://localhost:4321` in dev; must be set explicitly in production (e.g. `https://intake.stormbook.ai`). |
-
-Per-client GHL location IDs + custom field IDs live in
-`apps/intake-api/data/clients.json` (gitignored). Use
-`data/clients.example.json` as the template.
+**`stormbook-website-deploy`** is the marketing site and legal pages at `stormbook.ai`. It lives at the repo root rather than in `apps/` and needs no configuration.
 
 ## Per-client deployment checklist
 
