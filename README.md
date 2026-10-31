@@ -1,127 +1,103 @@
-# Stormbook Engine — Build Kit
+# Stormbook Engine
 
 [![CI](https://github.com/mackkha3/stormbook-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/mackkha3/stormbook-engine/actions/workflows/ci.yml)
 
-This kit is everything you need to build the Stormbook engine using Claude
-Code in your terminal. Files generated in the browser, executed in the
-terminal, results stay on your laptop.
+Stormbook is an AI-powered SMS lead-to-inspection booking engine for
+storm-restoration roofers. It captures inbound leads from Meta Lead Ads and web
+forms, targets a first SMS reply within 60 seconds, qualifies the homeowner over
+a short text conversation, and books the inspection directly on the client's
+calendar. Stormbook is operated by OTHONAS GROUP LLC.
 
-## What's in here
+## Architecture
 
+A monorepo of seven apps: three Python services and four static front ends.
+
+### Python/FastAPI services (Railway)
+
+| App | Purpose |
+|---|---|
+| [`apps/intake-api`](apps/intake-api) | Receives web form and Meta Lead Ads leads and forwards them to GoHighLevel, where a workflow sends the first SMS |
+| [`apps/booking-engine`](apps/booking-engine) | Reads homeowner replies and books inspections inside the text conversation. The AI reads, the templates write: Claude classifies and extracts, and every outbound word comes from a template |
+| [`apps/demo-relay`](apps/demo-relay) | Twilio SMS bridge for live product demos |
+
+### Static HTML/JS apps (Netlify)
+
+| App | Purpose |
+|---|---|
+| [`apps/intake-form`](apps/intake-form) | Homeowner lead capture form |
+| [`apps/demo-form`](apps/demo-form) | Demo request form |
+| [`apps/demo-dashboard`](apps/demo-dashboard) | Metrics dashboard demo, using mock data |
+| [`stormbook-website-deploy`](stormbook-website-deploy) | Marketing site and legal pages |
+
+## Stack
+
+- **Services:** Python 3.13, FastAPI, Pydantic v2, uv, httpx, SQLAlchemy
+- **Quality:** pytest, pytest-cov, ruff
+- **Front ends:** vanilla HTML/CSS/JS, Chart.js
+- **Integrations:** Twilio (with an A2P 10DLC consent check), Meta Graph API,
+  GoHighLevel, Anthropic Claude API
+
+## Testing
+
+- 792 tests across the three Python services, with 94.0% statement coverage:
+
+  | Service | Tests | Coverage |
+  |---|---:|---:|
+  | booking-engine | 594 | 94.4% |
+  | demo-relay | 101 | 95.6% |
+  | intake-api | 97 | 91.0% |
+
+- GoHighLevel, Twilio, Meta and Anthropic are mocked at the boundaries.
+- Live Anthropic tests are gated behind the `live` marker and excluded from CI.
+  To run them, set `ANTHROPIC_API_KEY` and run `uv run pytest -m live` in
+  `apps/booking-engine`.
+- CI runs the full suite and ruff in about 36 seconds, on Ubuntu, through a
+  per-service GitHub Actions matrix.
+
+## Security
+
+Webhook signatures are verified with hand-rolled code and no vendor SDK:
+
+- **Twilio (demo-relay):** HMAC-SHA1 over the URL and sorted form parameters.
+  Invalid requests get a 403 and are never processed. See
+  [`twilio_sig.py`](apps/demo-relay/src/demo_relay/lib/twilio_sig.py).
+- **Meta (intake-api):** HMAC-SHA256 over the raw request body, checked against
+  `X-Hub-Signature-256`. Requests get a 401 if the signature is invalid or the
+  app secret is unset. See
+  [`meta.py`](apps/intake-api/src/intake_api/handlers/meta.py).
+- **Timing-safe comparison:** signatures are compared with `hmac.compare_digest`
+  on bytes, because it raises `TypeError` on non-ASCII `str` input.
+- **Railway proxy:** demo-relay rebuilds the URL Twilio signed from
+  `X-Forwarded-Proto` and `X-Forwarded-Host`, since the app sees internal HTTP
+  behind the proxy.
+- **Local development:** `TWILIO_SIGNATURE_VERIFICATION=off` skips the Twilio
+  check and logs a warning on each request. It is intended for local use only;
+  verification is on unless explicitly disabled.
+
+Secrets are never committed. Each service's `.env.example` is its configuration
+contract, and `.env` files are gitignored.
+
+## Project isolation
+
+The Node toolchain is pinned per project, with no global installs. Each Python
+service has its own uv-managed environment. See
+[docs/isolation.md](docs/isolation.md).
+
+## Deployment
+
+The Python services deploy to Railway using Railpack, and the static apps deploy
+to Netlify. See [docs/deployment.md](docs/deployment.md), plus
+[the booking-engine deploy guide](apps/booking-engine/docs/DEPLOY.md) and
+[the demo-relay README](apps/demo-relay/README.md).
+
+## Development quickstart
+
+```bash
+cd apps/<app>     # booking-engine, demo-relay or intake-api
+uv sync
+uv run pytest
 ```
-stormbook-engine/
-├── README.md              ← you are here
-├── spec.md                ← source of truth (v1, locked for first 10 pilots)
-└── apps/                  ← the services and front ends, one folder each
-```
 
-## Prerequisites — one-time host setup
+## License
 
-This project is **isolated** from your system. Once these are
-installed, nothing else this kit does will touch global state.
-
-**Required:**
-
-- `nvm` (or `volta`, or `asdf` — pick one). nvm is the most common.
-  Install on macOS:
-  ```bash
-  brew install nvm
-  # then follow brew's post-install instructions to source nvm in your shell
-  ```
-- `git`
-- A terminal and an editor (Cursor and VS Code both work)
-
-**You do NOT install:**
-
-- Node directly — the project's `.nvmrc` will install the right
-  version into nvm's per-project directory
-- Wrangler, TypeScript, Vitest, or any other CLI tool globally —
-  every tool lives inside the project's `node_modules/`
-
-If you ever want to fully tear this project off your machine,
-deleting the project folder removes 100% of its footprint. Nothing
-was installed system-wide.
-
-## Setup (one time)
-
-1. Download this entire `stormbook-engine/` folder to your laptop.
-   Recommended location: `~/code/stormbook-engine/`
-2. Open it in your editor of choice (Cursor, VS Code, whatever).
-3. Match the Node version this project expects:
-   ```bash
-   cd ~/code/stormbook-engine
-   nvm install   # reads .nvmrc, installs Node 20 if you don't have it
-   nvm use       # switches your shell to that version, just for this dir
-   ```
-4. Initialize git the moment you have anything: `git init && git add -A
-   && git commit -m "kit: initial spec + prompts"`.
-5. Open a terminal in that directory. Run `claude` to start Claude Code.
-
-If `nvm use` ever throws `N/A`, run `nvm install` first.
-
-## How to use the prompts
-
-Prompts are run **in order, in separate Claude Code sessions**, in the
-same project directory. Each prompt is self-contained and assumes
-Claude Code has access to `./spec.md` for any details not in the
-prompt itself.
-
-| # | When | Build | Verify before next |
-|---|---|---|---|
-| 0 | First | Project structure + tooling setup | `ls` shows the expected directory tree |
-| 1 | Week 1 (before Day 15 launch) | Intake form (§5.1) | Open `apps/intake-form/index.html` locally, submit a test → fills mock log |
-| 2 | Week 2 (after first demo) | Demo dashboard (§5.3) | Open `apps/demo-dashboard/index.html` → charts render with mock data |
-| 3 | Week 3 (before first pilot deploys) | Intake API (§5.2) | `npm run dev` in `apps/intake-api/`, POST test lead, confirm GHL contact created |
-
-Order is deliberate: form + dashboard come first because both are
-demo-critical. The API is production-critical, not demo-critical, so
-it can wait until you have a paying pilot.
-
-## Workflow per prompt
-
-```
-$ cd ~/code/stormbook-engine
-$ claude
-> [paste the full build brief for this component]
-[Claude Code builds]
-$ # inspect the files it created
-$ # run the verification step from the prompt
-$ git add -A && git commit -m "build: <component>"
-$ exit  # exit claude, start a fresh session for the next prompt
-```
-
-A fresh Claude Code session per prompt is the right move — keeps context
-windows clean, prevents one build's mistakes from contaminating the next,
-forces each prompt to be self-sufficient.
-
-## When something goes sideways
-
-Don't keep prompting Claude Code to fix a half-broken build. Come back
-to me (browser) with:
-
-1. What you ran
-2. What it built (file tree + key file contents)
-3. What's wrong
-
-I'll regenerate or patch the prompt. Then you run the fixed version
-in a clean Claude Code session.
-
-## What this kit does NOT include
-
-These are deferred until 3 pilots are signed and paid:
-
-- Voice AI integration (Vapi.ai) — Premium tier feature
-- Branded caller ID / STIR-SHAKEN registration
-- Multi-tenant SaaS dashboard for clients
-- Client-facing portals
-- Slack/email notification stack beyond what GHL handles natively
-
-These live in GHL, not in code — do not ask Claude Code to build them:
-
-- Pipeline + custom fields + Workflows A/B/C/D (you build these in GHL UI per §4)
-- Calendar setup (GHL)
-- SMS templates (GHL snippets)
-- Stripe billing event firing (GHL → Stripe webhook)
-
-Stay narrow. Build only what's in §5. Everything else is
-distraction.
+[MIT](LICENSE). The Stormbook name and logos are not covered by this license.
