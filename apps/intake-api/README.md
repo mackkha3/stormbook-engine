@@ -61,8 +61,8 @@ body. When a lead goes missing, that's the debug anchor across logs.
 ## Adding a new client
 
 1. **GHL side (operator, no code):** Inside the client's GHL sub-account,
-   note their `locationId` and the custom-field IDs that match
-   `spec.md` §4.2 (Damage Type, Stormbook Lead ID, Homeowner Status,
+   note their `locationId` and the custom-field IDs for the contact fields
+   Stormbook writes (Damage Type, Stormbook Lead ID, Homeowner Status,
    Insurance Status, Inspection Date, Property Address).
 
 2. **Config:** Pick the path that matches your environment.

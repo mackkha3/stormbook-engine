@@ -65,3 +65,8 @@ pnpm-debug.log*
 
 # Internal build prompts and incident notes. Never published.
 prompts/
+
+# Internal docs — never commit
+ops/
+spec.md
+docs/ghl-config-checklist.md

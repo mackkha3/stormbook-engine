@@ -4,9 +4,9 @@
 client_slug: roof-demo
 company_name: "Roof Demo"
 company_phone: "+15555550100"          # shown in emergency/handoff lines
-ghl_location_id: "ftnowUv7G6rev8jIL6Nj"
+ghl_location_id: "YOUR_GHL_LOCATION_ID"
 ghl_token_env: "GHL_TOKEN_ROOF_DEMO"   # name of env var holding the token
-calendar_id: "n7h9Vz1F7G4Lw8gbCCdF"
+calendar_id: "YOUR_GHL_CALENDAR_ID"
 pipeline_id: "YOUR_GHL_PIPELINE_ID"
 stage_ids:
   texted: "YOUR_GHL_STAGE_ID_TEXTED"

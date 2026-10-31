@@ -41,7 +41,7 @@ def build_contact_payload(
 ) -> dict[str, Any]:
     """Map a normalized intake payload + client config → GHL Contacts body.
 
-    Field mapping is locked: each client's GHL custom fields (spec.md §4.2) depend on it.
+    Field mapping is locked: each client's GHL contact custom fields depend on it.
     """
     cf_ids = client.custom_field_ids
     custom_fields: list[dict[str, str]] = []

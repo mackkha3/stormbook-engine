@@ -48,4 +48,6 @@ Per-client GHL location IDs + custom field IDs live in
 
 ## Per-client deployment checklist
 
-See §6 of `spec.md` for the canonical 14-day deploy runbook.
+Each client follows a 14-day deploy: kickoff, GHL sub-account setup, lead
+source integration, SMS template customization, internal testing, client UAT,
+refinements, soft launch, then full launch and handoff.
